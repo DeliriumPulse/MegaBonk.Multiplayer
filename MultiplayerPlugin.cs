@@ -124,6 +124,8 @@ namespace Megabonk.Multiplayer
                     SafePatch(typeof(Patch_TraceTileRNG));
                     SafePatch(typeof(Patch_ForceTileSeed));
                     SafePatch(typeof(Patch_SceneManagerSceneLoaded));
+                    SafePatch(typeof(Patch_PlayerStats));
+                    SafePatch(typeof(Patch_PlayerHealth_UpdateMaxValues));
                     SafePatch(typeof(Patch_PlayerRenderer));
                     SafePatch(typeof(Patch_MyButtonCharacter));
                     SafePatch(typeof(Patch_CharacterInfoUI));

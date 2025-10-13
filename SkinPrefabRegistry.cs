@@ -347,40 +347,10 @@ namespace Megabonk.Multiplayer
 
         private static void ApplySkinToTemplate(GameObject root, SkinData skin)
         {
-            if (root == null || skin == null || skin.materials == null || skin.materials.Length == 0)
-                return;
-
-            try
-            {
-                var renderers = Il2CppComponentUtil.GetComponentsInChildrenCompat<SkinnedMeshRenderer>(root.transform, true);
-                for (int i = 0; i < renderers.Length; i++)
-                {
-                    var smr = renderers[i];
-                    if (smr == null)
-                        continue;
-
-                    try
-                    {
-                        var mats = skin.materials;
-                        if (mats == null || mats.Length == 0)
-                            continue;
-
-                        var cloned = new Material[mats.Length];
-                        for (int m = 0; m < mats.Length; m++)
-                            cloned[m] = mats[m];
-
-                        smr.sharedMaterials = cloned;
-                    }
-                    catch
-                    {
-                        // ignored; best effort
-                    }
-                }
-            }
-            catch (Exception ex)
-            {
-                MultiplayerPlugin.LogS?.LogDebug($"[SkinRegistry] Failed to apply skin materials: {ex.Message}");
-            }
+            // Skin application currently skipped; the base prefab already carries the correct materials.
+            // Attempting to set sharedMaterials via IL2CPP can throw MissingMethodException, so we no longer do it here.
+            _ = root;
+            _ = skin;
         }
 
         public static bool TryGetDescriptor(Transform visual, out AppearanceDescriptor descriptor)
@@ -866,14 +836,18 @@ namespace Megabonk.Multiplayer
                     return false;
                 }
 
-                var inventory = new PlayerInventory(characterData);
-                playerRenderer.SetCharacter(characterData, inventory, position);
-                playerRenderer.CreateMaterials(4);
+                using (RemoteStatScope.Enter())
+                {
+                    var inventory = new PlayerInventory(characterData, true);
+                    playerRenderer.SetCharacter(characterData, inventory, position);
+                    playerRenderer.CreateMaterials(4);
 
-                if (skin != null)
-                    playerRenderer.SetSkin(skin);
+                    if (skin != null)
+                        playerRenderer.SetSkin(skin);
+                }
 
-                rendererContainer.transform.localPosition = new Vector3(0f, -(characterData.colliderHeight / 2f), 0f);
+                // Let the instantiated prefab keep its authoring-time offset; we only ensure it stays rooted cleanly.
+                rendererContainer.transform.localPosition = Vector3.zero;
                 rendererContainer.transform.localRotation = Quaternion.identity;
 
                 EnableRenderStack(rendererContainer);
