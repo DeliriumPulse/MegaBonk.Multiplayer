@@ -1,0 +1,44 @@
+## Build artifacts
+[Bb]in/
+[Oo]bj/
+[Dd]ebug/
+[Rr]elease/
+[Rr]eleases/
+
+## IDE and tooling
+.vs/
+.vscode/
+*.user
+*.userprefs
+*.suo
+*.cache
+*.opendb
+
+## Logs and temp files
+*.log
+*.tmp
+*.swp
+*.swo
+*.orig
+*.bak
+~$*
+
+## NuGet / package restore
+packages/
+*.nupkg
+project.lock.json
+
+## Rider / ReSharper
+_ReSharper.*/
+*.DotSettings.user
+
+## Unity / BepInEx runtime state
+BepInEx/LogOutput.log
+BepInEx/LogOutput*.log
+BepInEx/plugins/cache/
+BepInEx/config/*.json.backup
+
+## Misc
+Thumbs.db
+Desktop.ini
+*.DS_Store

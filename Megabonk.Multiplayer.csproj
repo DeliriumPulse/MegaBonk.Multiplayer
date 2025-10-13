@@ -1,0 +1,105 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net6.0</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>disable</Nullable>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <AssemblyName>Megabonk.Multiplayer</AssemblyName>
+    <RootNamespace>Megabonk.Multiplayer</RootNamespace>
+    <Platforms>AnyCPU</Platforms>
+    <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
+    <EmitCompilerGeneratedFiles>false</EmitCompilerGeneratedFiles>
+    <Features>strict</Features>
+    <DefineConstants>DISABLE_NULLABLE</DefineConstants>
+    <DisableImplicitFrameworkReferences>false</DisableImplicitFrameworkReferences>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Reference Include="Assembly-CSharp">
+      <HintPath>D:\SteamLibrary\steamapps\common\Megabonk\BepInEx\interop\Assembly-CSharp.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="Steamworks.NET">
+      <HintPath>External\Steamworks.NET.dll</HintPath>
+    </Reference>
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="BepInEx.Core" Version="6.0.0-be.738" />
+    <PackageReference Include="BepInEx.Unity.IL2CPP" Version="6.0.0-be.738" />
+    <PackageReference Include="LiteNetLib" Version="1.0.1" />
+    <PackageReference Include="HarmonyX" Version="2.10.2" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Reference Include="UnityEngine">
+      <HintPath>D:\SteamLibrary\steamapps\common\Megabonk\BepInEx\unity-libs\UnityEngine.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.CoreModule">
+      <HintPath>D:\SteamLibrary\steamapps\common\Megabonk\BepInEx\unity-libs\UnityEngine.CoreModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.InputLegacyModule">
+      <HintPath>D:\SteamLibrary\steamapps\common\Megabonk\BepInEx\unity-libs\UnityEngine.InputLegacyModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.PhysicsModule">
+      <HintPath>D:\SteamLibrary\steamapps\common\Megabonk\BepInEx\unity-libs\UnityEngine.PhysicsModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.AudioModule">
+      <HintPath>D:\SteamLibrary\steamapps\common\Megabonk\BepInEx\unity-libs\UnityEngine.AudioModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.IMGUIModule">
+      <HintPath>D:\SteamLibrary\steamapps\common\Megabonk\BepInEx\unity-libs\UnityEngine.IMGUIModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.UIModule">
+      <HintPath>D:\SteamLibrary\steamapps\common\Megabonk\BepInEx\unity-libs\UnityEngine.UIModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.AnimationModule">
+      <HintPath>D:\SteamLibrary\steamapps\common\Megabonk\BepInEx\unity-libs\UnityEngine.AnimationModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.TextRenderingModule">
+      <HintPath>D:\SteamLibrary\steamapps\common\Megabonk\BepInEx\unity-libs\UnityEngine.TextRenderingModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.JSONSerializeModule">
+      <HintPath>D:\SteamLibrary\steamapps\common\Megabonk\BepInEx\unity-libs\UnityEngine.JSONSerializeModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="Unity.Mathematics">
+      <HintPath>D:\SteamLibrary\steamapps\common\Megabonk\BepInEx\interop\Unity.Mathematics.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="Il2Cppmscorlib">
+      <HintPath>D:\SteamLibrary\steamapps\common\Megabonk\BepInEx\interop\Il2Cppmscorlib.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="Il2CppSystem">
+      <HintPath>D:\SteamLibrary\steamapps\common\Megabonk\BepInEx\interop\Il2CppSystem.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="Il2CppInterop.Runtime">
+      <HintPath>D:\SteamLibrary\steamapps\common\Megabonk\BepInEx\interop\Il2CppInterop.Runtime.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+  </ItemGroup>
+
+  <PropertyGroup>
+    <OutputPath>bin\$(Configuration)\net6.0\</OutputPath>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Remove="multibonk\**\*.cs" />
+    <None Remove="multibonk\**\*" />
+    <EmbeddedResource Remove="multibonk\**\*" />
+  </ItemGroup>
+
+</Project>
