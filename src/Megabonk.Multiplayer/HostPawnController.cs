@@ -4,24 +4,49 @@ using Assets.Scripts.Actors.Player;
 
 namespace Megabonk.Multiplayer
 {
-    /// Client-side: read the actual player model transform and stream it.
-    public class InputDriver : MonoBehaviour
+    public class HostPawnController : MonoBehaviour
     {
         private NetDriverCore _core;
         private Transform _source;
         private float _txTimer;
-        private const float TX_INTERVAL = 0.05f;   // 20 Hz
-
+        private const float TX_INTERVAL = 0.05f;  // 20 Hz
         private float _rebindTimer;
         private const float REBIND_EVERY = 0.5f;
         private float _refreshTimer;
         private const float REFRESH_EVERY = 2f;
         private string _lastAppearancePayload;
+        private static HostPawnController _active;
 
         private void Start()
         {
             _core = MultiplayerPlugin.Driver;
             ResolveSource("start");
+        }
+
+        private void OnEnable() => _active = this;
+
+        private void OnDisable()
+        {
+            if (_active == this)
+                _active = null;
+        }
+
+        internal static void NotifyLocalCharacterSet(PlayerRenderer renderer)
+        {
+            if (_active == null || renderer == null)
+                return;
+
+            _active.OnLocalCharacterSet(renderer);
+        }
+
+        private void OnLocalCharacterSet(PlayerRenderer renderer)
+        {
+            _source = null;
+            _rebindTimer = 0f;
+            _refreshTimer = 0f;
+            _txTimer = 0f;
+            _lastAppearancePayload = null;
+            ResolveSource("character");
         }
 
         private void Update()
@@ -34,10 +59,9 @@ namespace Megabonk.Multiplayer
                 var go = _source.gameObject;
                 if (!go || !go.activeInHierarchy)
                 {
-                    MultiplayerPlugin.LogS?.LogInfo("[InputDriver] Source became inactive; scheduling rebind.");
+                    MultiplayerPlugin.LogS?.LogInfo("[HostPawn] Source became inactive; scheduling rebind.");
                     _source = null;
                     _rebindTimer = 0f;
-                    _lastAppearancePayload = null;
                 }
             }
 
@@ -72,18 +96,19 @@ namespace Megabonk.Multiplayer
             if (TryResolveFromMyPlayer(phase))
                 return;
 
-            var resolved = PlayerModelLocator.Find(transform, $"InputDriver.{phase}", allowFallback: false);
+            var resolved = PlayerModelLocator.Find(transform, $"HostPawn.{phase}", allowFallback: false);
             if (resolved != null)
             {
                 _source = resolved;
                 _refreshTimer = REFRESH_EVERY;
-                MultiplayerPlugin.LogS?.LogInfo($"[InputDriver] {phase} -> {PlayerModelLocator.Describe(_source)}");
+                if (phase == "rebind")
+                    MultiplayerPlugin.LogS?.LogInfo($"[HostPawn] Rebound -> {PlayerModelLocator.Describe(_source)}");
                 BroadcastAppearance();
                 return;
             }
 
             _source = null;
-            MultiplayerPlugin.LogS?.LogWarning($"[InputDriver] {phase}: locator returned null, will retry.");
+            MultiplayerPlugin.LogS?.LogWarning($"[HostPawn] {phase}: locator returned null, will retry.");
         }
 
         private void TryRefreshSource()
@@ -91,63 +116,13 @@ namespace Megabonk.Multiplayer
             if (TryResolveFromMyPlayer("refresh"))
                 return;
 
-            var refreshed = PlayerModelLocator.Find(_source, "InputDriver.refresh", allowFallback: false);
+            var refreshed = PlayerModelLocator.Find(_source, "HostPawn.refresh", allowFallback: false);
             if (refreshed != null && refreshed != _source)
             {
                 _source = refreshed;
-                _refreshTimer = REFRESH_EVERY;
-                MultiplayerPlugin.LogS?.LogInfo($"[InputDriver] Refresh -> {PlayerModelLocator.Describe(_source)}");
+                MultiplayerPlugin.LogS?.LogInfo($"[HostPawn] Refresh -> {PlayerModelLocator.Describe(_source)}");
                 BroadcastAppearance();
             }
-        }
-
-        private void BroadcastAppearance()
-        {
-            if (_core == null || _source == null)
-                return;
-
-            var comps = Il2CppComponentUtil.GetComponentsInChildrenCompat<SkinnedMeshRenderer>(_source, true);
-            var skinned = comps != null && comps.Length > 0 ? comps[0] : null;
-            if (skinned == null || skinned.sharedMesh == null)
-                return;
-
-            var visual = skinned.transform;
-            if (!visual)
-                return;
-
-            PlayerModelLocator.RegisterKnownVisual(_source, visual, "InputDriver.BroadcastAppearance");
-            ModelRegistry.Register(visual);
-
-            var appearance = new AppearanceInfo
-            {
-                RootPath = string.Empty,
-                PrefabName = string.Empty,
-                MeshName = skinned.sharedMesh.name,
-                MaterialNames = Array.Empty<string>(),
-                CharacterClass = string.Empty,
-                CharacterId = -1,
-                SkinName = string.Empty
-            };
-
-            if (!SkinPrefabRegistry.TryGetDescriptor(visual, out var descriptor))
-            {
-                MultiplayerPlugin.LogS?.LogDebug("[InputDriver] Skipping appearance broadcast – descriptor unavailable.");
-                return;
-            }
-
-            appearance.CharacterId = (int)descriptor.Character;
-            appearance.SkinName = descriptor.SkinName ?? string.Empty;
-
-            if (descriptor.CharacterData != null)
-                SkinPrefabRegistry.RegisterCharacterData(descriptor.CharacterData);
-
-            var payload = AppearanceSerializer.Serialize(appearance);
-            if (string.Equals(payload, _lastAppearancePayload, StringComparison.Ordinal))
-                return;
-
-            _lastAppearancePayload = payload;
-            MultiplayerPlugin.LogS?.LogInfo($"[InputDriver] Broadcasting appearance: {payload}");
-            _core.SendAppearanceJson(payload);
         }
 
         private bool TryResolveFromMyPlayer(string phase)
@@ -189,18 +164,64 @@ namespace Megabonk.Multiplayer
                 _source = skinned[0].transform;
                 _refreshTimer = REFRESH_EVERY;
                 _rebindTimer = REBIND_EVERY;
-                PlayerModelLocator.RegisterKnownVisual(transform, _source, $"InputDriver.{phase}.MyPlayer");
-                PlayerModelLocator.RegisterKnownVisual(playerRenderer.transform, _source, $"InputDriver.{phase}.MyPlayerRenderer");
+
+                PlayerModelLocator.RegisterKnownVisual(transform, _source, $"HostPawn.{phase}.MyPlayer");
+                PlayerModelLocator.RegisterKnownVisual(playerRenderer.transform, _source, $"HostPawn.{phase}.MyPlayerRenderer");
                 SkinPrefabRegistry.RegisterCharacterData(playerRenderer.characterData);
-                MultiplayerPlugin.LogS?.LogInfo($"[InputDriver] {phase} (MyPlayer) -> {PlayerModelLocator.Describe(_source)}");
+
+                MultiplayerPlugin.LogS?.LogInfo($"[HostPawn] {phase} (MyPlayer) -> {PlayerModelLocator.Describe(_source)}");
                 BroadcastAppearance();
                 return true;
             }
             catch (Exception ex)
             {
-                MultiplayerPlugin.LogS?.LogDebug($"[InputDriver] Failed to resolve from MyPlayer during {phase}: {ex.Message}");
+                MultiplayerPlugin.LogS?.LogDebug($"[HostPawn] Failed to resolve from MyPlayer during {phase}: {ex.Message}");
                 return false;
             }
+        }
+
+        private void BroadcastAppearance()
+        {
+            if (_core == null || _source == null)
+                return;
+
+            var comps = Il2CppComponentUtil.GetComponentsInChildrenCompat<SkinnedMeshRenderer>(_source, true);
+            var skinned = comps.Length > 0 ? comps[0] : null;
+
+            if (skinned == null || skinned.sharedMesh == null)
+                return;
+
+            var visual = skinned.transform;
+            if (!visual)
+                return;
+
+            PlayerModelLocator.RegisterKnownVisual(_source, visual, "HostPawn.BroadcastAppearance");
+            ModelRegistry.Register(visual);
+
+            var appearance = new AppearanceInfo
+            {
+                RootPath = string.Empty,
+                PrefabName = string.Empty,
+                MeshName = skinned.sharedMesh.name,
+                MaterialNames = Array.Empty<string>(),
+                CharacterClass = string.Empty, // TODO: fill from player data if available
+                CharacterId = -1,
+                SkinName = string.Empty
+            };
+
+            if (SkinPrefabRegistry.TryGetDescriptor(visual, out var descriptor))
+            {
+                appearance.CharacterId = (int)descriptor.Character;
+                appearance.SkinName = descriptor.SkinName ?? string.Empty;
+            }
+
+            var payload = AppearanceSerializer.Serialize(appearance);
+            if (string.Equals(payload, _lastAppearancePayload, StringComparison.Ordinal))
+                return;
+
+            _lastAppearancePayload = payload;
+            MultiplayerPlugin.LogS?.LogInfo($"[HostPawn] Broadcasting appearance: {payload}");
+            _core.SendAppearanceJson(payload);
         }
     }
 }

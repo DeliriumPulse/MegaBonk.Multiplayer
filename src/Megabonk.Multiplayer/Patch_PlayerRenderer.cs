@@ -67,6 +67,12 @@ namespace Megabonk.Multiplayer
             SkinPrefabRegistry.RegisterCharacterData(characterData);
             var visual = __instance.renderer != null ? __instance.renderer.transform : __instance.transform;
             SkinPrefabRegistry.RegisterAppearance(__instance, visual, null);
+
+            if (!RemoteStatScope.IsActive)
+            {
+                InputDriver.NotifyLocalCharacterSet(__instance);
+                HostPawnController.NotifyLocalCharacterSet(__instance);
+            }
         }
     }
 }

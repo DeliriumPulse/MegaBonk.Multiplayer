@@ -2,12 +2,13 @@
 
 This repository contains the BepInEx mod that adds co-op networking features to **Megabonk**.
 
-## Structure
+## Layout
 
-- `Megabonk.Multiplayer.csproj` – Core mod project targeting `net6.0`.
-- `NetDriver*`, `InputDriver.cs`, `RemoteAvatar.cs` – Main networking, transport, and replication systems.
-- `Patches/` – Harmony patches that synchronise map generation, RNG, and gameplay data across peers.
-- `SkinPrefabRegistry.cs`, `PlayerModelLocator.cs` – Helpers that locate and clone player models for remote avatars.
+- `src/Megabonk.Multiplayer/` – Core BepInEx plug-in (project file, source, and local tooling).
+- `src/Megabonk.Multiplayer/External/` – Native/managed shim libraries required at build time.
+- `src/Megabonk.Multiplayer/Patch_*.cs` – Harmony patches that synchronise RNG, map generation, and gameplay state.
+- `src/Megabonk.Multiplayer/NetDriver*.cs`, `InputDriver.cs`, `RemoteAvatar.cs` – Networking entry points and replication logic.
+- `src/Megabonk.Multiplayer/SkinPrefabRegistry.cs`, `PlayerModelLocator.cs` – Helpers that locate, clone, and register player models.
 
 ## Building
 
@@ -15,7 +16,8 @@ This repository contains the BepInEx mod that adds co-op networking features to 
 dotnet build -c Release
 ```
 
-The compiled DLL will be in `bin\Release\net6.0\net6.0\` and can be copied into the game's `BepInEx/plugins` directory.
+Output is written to `src/Megabonk.Multiplayer/bin/Release/net6.0/net6.0/`.
+Copy `Megabonk.Multiplayer.dll` from that directory into each game's `BepInEx/plugins` folder.
 
 ## Contributing
 
