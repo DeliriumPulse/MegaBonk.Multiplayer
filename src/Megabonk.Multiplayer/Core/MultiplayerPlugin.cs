@@ -33,6 +33,8 @@ namespace Megabonk.Multiplayer
         private BepInEx.Configuration.ConfigEntry<bool> _enableTypeDump;
         private BepInEx.Configuration.ConfigEntry<string> _transport;
         private BepInEx.Configuration.ConfigEntry<string> _hostSteamId;
+        private BepInEx.Configuration.ConfigEntry<bool> _enableRngSync;
+        internal static bool EnableRngSync { get; private set; } = true;
         public static int CoopSeed = int.MinValue;
 
         public override void Load()
@@ -46,13 +48,11 @@ namespace Megabonk.Multiplayer
             _enableTypeDump = Config.Bind("Debug", "EnableTypeDump", false, "Dump typelist.txt on first map load");
             _transport = Config.Bind("Multiplayer", "Transport", "lite", "Transport: 'lite' or 'steam'");
             _hostSteamId = Config.Bind("Multiplayer", "HostSteamId", "0", "64-bit SteamID of host");
+            _enableRngSync = Config.Bind("Multiplayer", "EnableRngSync", true, "Enable RNG synchronization patches.");
+            EnableRngSync = _enableRngSync.Value;
 
             // Register IL2CPP types for BepInEx
             NetDriverShim.EnsureRegistered();
-            ClassInjector.RegisterTypeInIl2Cpp<InputDriver>();
-            ClassInjector.RegisterTypeInIl2Cpp<CameraFollower>();
-            ClassInjector.RegisterTypeInIl2Cpp<HostPawnController>();
-            ClassInjector.RegisterTypeInIl2Cpp<RemoteAvatar>();
             ClassInjector.RegisterTypeInIl2Cpp<PatchBootstrapper>();
 
             try
@@ -122,23 +122,30 @@ namespace Megabonk.Multiplayer
                     SafePatch(typeof(Patch_TraceCR_Constructors));
                     SafePatch(typeof(Patch_DumpConsistentRandomFields));
                     SafePatch(typeof(Patch_SystemRandomTrace));
-                    SafePatch(typeof(Patch_MapGeneratorTrace));
-                    SafePatch(typeof(Patch_UnityRandomSeed));
-                    SafePatch(typeof(Patch_UnityRandomInitOverride));
-                    SafePatch(typeof(Patch_AllUnityRandomInit));
-                    SafePatch(typeof(Patch_UnityRandomStateSetter));
-                    SafePatch(typeof(Patch_SeedBeforeGeneration));
-                    SafePatch(typeof(Patch_MapGeneratorForceSeed));
-                    SafePatch(typeof(Patch_RNGGuard));
-                    SafePatch(typeof(Patch_RNGCoroutineGuard));
-                    SafePatch(typeof(Patch_UnityMathRandomTrace));
-                    SafePatch(typeof(Patch_UnityMathematicsSeed_Constructors));
-                    SafePatch(typeof(Patch_UnityMathematicsSeed_Init));
-                    SafePatch(typeof(Patch_UnityMathematicsSeed_CreateFromIndex));
-                    SafePatch(typeof(Patch_JobCreationTrace));
-                    SafePatch(typeof(Patch_ProceduralTileJobSeed));
-                    SafePatch(typeof(Patch_TraceTileRNG));
-                    SafePatch(typeof(Patch_ForceTileSeed));
+                    if (EnableRngSync)
+                    {
+                        SafePatch(typeof(Patch_MapGeneratorTrace));
+                        SafePatch(typeof(Patch_UnityRandomSeed));
+                        SafePatch(typeof(Patch_UnityRandomInitOverride));
+                        SafePatch(typeof(Patch_AllUnityRandomInit));
+                        SafePatch(typeof(Patch_UnityRandomStateSetter));
+                        SafePatch(typeof(Patch_SeedBeforeGeneration));
+                        SafePatch(typeof(Patch_MapGeneratorForceSeed));
+                        SafePatch(typeof(Patch_RNGGuard));
+                        SafePatch(typeof(Patch_RNGCoroutineGuard));
+                        SafePatch(typeof(Patch_UnityMathRandomTrace));
+                        SafePatch(typeof(Patch_UnityMathematicsSeed_Constructors));
+                        SafePatch(typeof(Patch_UnityMathematicsSeed_Init));
+                        SafePatch(typeof(Patch_UnityMathematicsSeed_CreateFromIndex));
+                        SafePatch(typeof(Patch_JobCreationTrace));
+                        SafePatch(typeof(Patch_ProceduralTileJobSeed));
+                        SafePatch(typeof(Patch_TraceTileRNG));
+                        SafePatch(typeof(Patch_ForceTileSeed));
+                    }
+                    else
+                    {
+                        LogS.LogInfo("[PATCH] RNG sync patches skipped (EnableRngSync = false).");
+                    }
                     SafePatch(typeof(Patch_SceneManagerSceneLoaded));
                     SafePatch(typeof(Patch_PlayerStats));
                     SafePatch(typeof(Patch_PlayerHealth_UpdateMaxValues));
@@ -200,25 +207,32 @@ namespace Megabonk.Multiplayer
                         LogS.LogWarning($"[PATCH] Failed to hook GameEvents.TriggerCharacterChanged: {ex.Message}");
                     }
 
-                    var harmonyJob = new Harmony("vettr.megabonk.multiplayer.jobrng.force");
-                    var prefix = typeof(Patch_DumpAndForceJobRNGs)
-                        .GetMethod("Prefix", BindingFlags.Static | BindingFlags.Public);
-
-                    foreach (var target in Patch_DumpAndForceJobRNGs.TargetMethods())
+                    if (EnableRngSync)
                     {
-                        if (target == null) continue;
-                        if (target.DeclaringType?.ContainsGenericParameters == true ||
-                            target.ContainsGenericParameters)
-                            continue;
+                        var harmonyJob = new Harmony("vettr.megabonk.multiplayer.jobrng.force");
+                        var prefix = typeof(Patch_DumpAndForceJobRNGs)
+                            .GetMethod("Prefix", BindingFlags.Static | BindingFlags.Public);
 
-                        try { harmonyJob.Patch(target, prefix: new HarmonyMethod(prefix)); }
-                        catch (Exception e)
+                        foreach (var target in Patch_DumpAndForceJobRNGs.TargetMethods())
                         {
-                            LogS.LogWarning($"[JOBRNG] Skipped {target?.DeclaringType?.FullName}.{target?.Name}: {e.Message}");
-                        }
-                    }
+                            if (target == null) continue;
+                            if (target.DeclaringType?.ContainsGenericParameters == true ||
+                                target.ContainsGenericParameters)
+                                continue;
 
-                    LogS.LogInfo("[JOBRNG] Manual patch registration completed.");
+                            try { harmonyJob.Patch(target, prefix: new HarmonyMethod(prefix)); }
+                            catch (Exception e)
+                            {
+                                LogS.LogWarning($"[JOBRNG] Skipped {target?.DeclaringType?.FullName}.{target?.Name}: {e.Message}");
+                            }
+                        }
+
+                        LogS.LogInfo("[JOBRNG] Manual patch registration completed.");
+                    }
+                    else
+                    {
+                        LogS.LogInfo("[JOBRNG] Manual patch registration skipped (EnableRngSync = false).");
+                    }
                 }
                 catch (Exception e)
                 {

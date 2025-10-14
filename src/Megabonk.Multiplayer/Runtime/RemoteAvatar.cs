@@ -28,6 +28,8 @@ namespace Megabonk.Multiplayer
             _targetPos = transform.position;
             _targetRot = transform.rotation;
             _nextRendererProbe = 0f;
+
+            RemoteStatRegistry.RegisterPlayerHealth(gameObject, StatSnapshot.Empty);
         }
 
         public void ApplyPose(Vector3 pos, Quaternion rot)

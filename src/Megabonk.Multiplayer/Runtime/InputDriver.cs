@@ -19,6 +19,13 @@ namespace Megabonk.Multiplayer
         private string _lastAppearancePayload;
         private static InputDriver _active;
         private bool _hasLocalVisual;
+        private ushort _inputSequence;
+        private float _inputTimer;
+        private float _inputKeepAlive;
+        private Vector2 _lastMove;
+        private Vector2 _lastLook;
+        private PlayerInputButtons _lastButtons;
+        private bool _hasSentInput;
 
         private void Start()
         {
@@ -59,6 +66,8 @@ namespace Megabonk.Multiplayer
             if (_core == null)
                 return;
 
+            TickInput();
+
             if (_source != null)
             {
                 var go = _source.gameObject;
@@ -95,6 +104,64 @@ namespace Megabonk.Multiplayer
                 _txTimer = 0f;
                 _core.SendPawnTransform(_source.position, _source.rotation);
             }
+        }
+
+        private void TickInput()
+        {
+            _inputTimer += Time.unscaledDeltaTime;
+            _inputKeepAlive += Time.unscaledDeltaTime;
+
+            const float INPUT_INTERVAL = 0.05f;
+            if (_inputTimer < INPUT_INTERVAL)
+                return;
+
+            _inputTimer = 0f;
+
+            var move = Vector2.zero;
+            if (Input.GetKey(KeyCode.W) || Input.GetKey(KeyCode.UpArrow)) move.y += 1f;
+            if (Input.GetKey(KeyCode.S) || Input.GetKey(KeyCode.DownArrow)) move.y -= 1f;
+            if (Input.GetKey(KeyCode.D) || Input.GetKey(KeyCode.RightArrow)) move.x += 1f;
+            if (Input.GetKey(KeyCode.A) || Input.GetKey(KeyCode.LeftArrow)) move.x -= 1f;
+            if (move.sqrMagnitude > 1f)
+                move.Normalize();
+
+            var look = new Vector2(
+                Input.GetAxisRaw("Mouse X"),
+                Input.GetAxisRaw("Mouse Y"));
+
+            var buttons = PlayerInputButtons.None;
+            if (Input.GetKey(KeyCode.Space))
+                buttons |= PlayerInputButtons.Jump;
+            if (Input.GetMouseButton(0))
+                buttons |= PlayerInputButtons.Attack;
+            if (Input.GetMouseButton(1))
+                buttons |= PlayerInputButtons.AbilityOne;
+            if (Input.GetKey(KeyCode.Q))
+                buttons |= PlayerInputButtons.AbilityTwo;
+            if (Input.GetKey(KeyCode.LeftShift) || Input.GetKey(KeyCode.RightShift))
+                buttons |= PlayerInputButtons.Dash;
+            if (Input.GetKey(KeyCode.E))
+                buttons |= PlayerInputButtons.Interact;
+            if (Input.GetKey(KeyCode.LeftControl) || Input.GetKey(KeyCode.RightControl))
+                buttons |= PlayerInputButtons.Sprint;
+
+            bool changed = !_hasSentInput
+                           || (_lastButtons != buttons)
+                           || (_lastMove - move).sqrMagnitude > 0.001f
+                           || (_lastLook - look).sqrMagnitude > 0.001f;
+
+            if (!changed && _inputKeepAlive < 0.5f)
+                return;
+
+            ushort sequence = ++_inputSequence;
+            float delta = _inputKeepAlive;
+            _inputKeepAlive = 0f;
+            _lastMove = move;
+            _lastLook = look;
+            _lastButtons = buttons;
+            _hasSentInput = true;
+
+            _core.SendInputState(sequence, delta, move, look, buttons);
         }
 
         private void ResolveSource(string phase)
@@ -165,7 +232,8 @@ namespace Megabonk.Multiplayer
                 MaterialNames = Array.Empty<string>(),
                 CharacterClass = string.Empty,
                 CharacterId = -1,
-                SkinName = string.Empty
+                SkinName = string.Empty,
+                Stats = StatSnapshot.Empty
             };
 
             if (!SkinPrefabRegistry.TryGetDescriptor(visual, out var descriptor))
@@ -179,6 +247,9 @@ namespace Megabonk.Multiplayer
 
             if (descriptor.CharacterData != null)
                 SkinPrefabRegistry.RegisterCharacterData(descriptor.CharacterData);
+
+            if (StatSnapshotBuilder.TryCapture(out var stats))
+                appearance.Stats = stats;
 
             var payload = AppearanceSerializer.Serialize(appearance);
             if (string.Equals(payload, _lastAppearancePayload, StringComparison.Ordinal))

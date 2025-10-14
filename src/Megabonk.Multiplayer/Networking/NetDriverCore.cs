@@ -20,6 +20,7 @@ namespace Megabonk.Multiplayer
         public string CharacterClass;
         public int CharacterId;
         public string SkinName;
+        public StatSnapshot Stats;
     }
 
     public class NetDriverCore
@@ -41,9 +42,11 @@ namespace Megabonk.Multiplayer
         private readonly Dictionary<ulong, AppearanceInfo> _appearanceByPeer = new();
         private readonly Dictionary<ulong, AppearanceInfo> _appliedAppearanceByPeer = new();
         private readonly Dictionary<ulong, string> _appearancePayloadByPeer = new();
+        private readonly Dictionary<ulong, StatSnapshot> _statsByPeer = new();
         private readonly HashSet<ulong> _connectedPeers = new();
         private readonly HashSet<ulong> _readyPeers = new();
         private readonly Dictionary<string, GameObject> _templateCache = new();
+        private readonly Dictionary<ulong, InputSample> _latestInputByPeer = new();
         private AppearanceInfo? _pendingAppearance;
         private string _pendingAppearanceSerialized;
 
@@ -170,6 +173,7 @@ namespace Megabonk.Multiplayer
                 _appliedAppearanceByPeer.Remove(peerId);
                 _appearancePayloadByPeer.Remove(peerId);
                 _readyPeers.Remove(peerId);
+                _latestInputByPeer.Remove(peerId);
             });
         }
 
@@ -287,6 +291,7 @@ namespace Megabonk.Multiplayer
                             {
                                 _appearanceByPeer[senderId] = appearance;
                                 _appearancePayloadByPeer[senderId] = json;
+                                _statsByPeer[senderId] = appearance.Stats ?? StatSnapshot.Empty;
                                 UpdatePeerReadyState(senderId, appearance);
                                 MultiplayerPlugin.LogS.LogInfo($"[NetDriverCore] Appearance update from {senderId}: {json}");
                                 if (_remoteAvatars.ContainsKey(senderId))
@@ -309,6 +314,28 @@ namespace Megabonk.Multiplayer
                                 forward.Put(json);
                                 _transport.SendTo(target, forward.CopyData(), true);
                             }
+                        }
+                        break;
+                    }
+
+                    case (byte)NetMsgType.INPUT:
+                    {
+                        var sample = new InputSample
+                        {
+                            Sequence = reader.GetUShort(),
+                            DeltaTime = reader.GetFloat(),
+                            Move = new Vector2(reader.GetFloat(), reader.GetFloat()),
+                            Look = new Vector2(reader.GetFloat(), reader.GetFloat()),
+                            Buttons = (PlayerInputButtons)reader.GetUShort()
+                        };
+
+                        _latestInputByPeer[peerId] = sample;
+                        if (_isHost)
+                        {
+                            var move = sample.Move;
+                            var look = sample.Look;
+                            MultiplayerPlugin.LogS?.LogDebug(
+                                $"[NetDriverCore] INPUT seq={sample.Sequence} from {peerId} move=({move.x:F3},{move.y:F3}) look=({look.x:F3},{look.y:F3}) buttons={sample.Buttons}");
                         }
                         break;
                     }
@@ -551,6 +578,11 @@ namespace Megabonk.Multiplayer
                 return;
             }
 
+            var stats = appearance.Stats ?? StatSnapshot.Empty;
+            appearance.Stats = stats;
+            if (_localPeerId != 0)
+                _statsByPeer[_localPeerId] = stats;
+
             UpdatePeerReadyState(_localPeerId, appearance);
             if (_localPeerId == 0 && !_isHost)
             {
@@ -572,6 +604,7 @@ namespace Megabonk.Multiplayer
 
             _appearanceByPeer[_localPeerId] = appearance;
             _appearancePayloadByPeer[_localPeerId] = payload;
+            _statsByPeer[_localPeerId] = appearance.Stats ?? StatSnapshot.Empty;
             UpdatePeerReadyState(_localPeerId, appearance);
 
             var writer = new NetDataWriter();
@@ -692,6 +725,7 @@ namespace Megabonk.Multiplayer
                         UnityEngine.Object.Destroy(existing.gameObject);
                         var upgraded = upgradedGo.GetComponent<RemoteAvatar>() ?? upgradedGo.AddComponent<RemoteAvatar>();
                         upgraded.ApplyPose(currentPos, currentRot);
+                        RemoteStatRegistry.RegisterPlayerHealth(upgradedGo, GetStatsForPeer(peerId));
                         _remoteAvatars[peerId] = upgraded;
                         MultiplayerPlugin.LogS.LogInfo($"[NetDriverCore] Upgraded avatar for peer {peerId} to character {DescribeAppearanceCharacter(peerId)}");
                         return upgraded;
@@ -734,6 +768,7 @@ namespace Megabonk.Multiplayer
             var avatar = go.GetComponent<RemoteAvatar>() ?? go.AddComponent<RemoteAvatar>();
             avatar.ApplyPose(spawnPos, spawnRot);
             avatar.EnsureAnimatorBinding(go.transform, $"EnsureAvatar[{peerId}]");
+            RemoteStatRegistry.RegisterPlayerHealth(go, GetStatsForPeer(peerId));
 
             _remoteAvatars[peerId] = avatar;
             MultiplayerPlugin.LogS.LogInfo($"[NetDriverCore] EnsureAvatar -> {go.name} for peer {peerId} at {spawnPos}");
@@ -742,23 +777,10 @@ namespace Megabonk.Multiplayer
 
         private GameObject CreateCapsuleAvatar(ulong peerId, Vector3 spawnPos, Quaternion spawnRot)
         {
-            var go = GameObject.CreatePrimitive(PrimitiveType.Capsule);
-            go.name = $"RemoteAvatar_{peerId}";
+            var go = new GameObject($"RemoteAvatar_{peerId}");
             go.transform.SetPositionAndRotation(spawnPos, spawnRot);
-            go.transform.localScale = new Vector3(1f, 2f, 1f);
-
-            var collider = go.GetComponent<Collider>();
-            if (collider != null)
-                UnityEngine.Object.Destroy(collider);
-
-            var renderer = go.GetComponent<Renderer>();
-            if (renderer != null)
-            {
-                var hue = (peerId % 997) / 997f;
-                renderer.material.color = Color.HSVToRGB(hue, 0.7f, 0.9f);
-                renderer.enabled = true;
-            }
-
+            go.transform.localScale = Vector3.one;
+            go.AddComponent<RemoteAvatar>();
             return go;
         }
 
@@ -771,6 +793,7 @@ namespace Megabonk.Multiplayer
             try
             {
                 root = new GameObject($"RemoteAvatar_{peerId}");
+                root.SetActive(false);
                 root.transform.SetPositionAndRotation(spawnPos, spawnRot);
 
                 var instance = UnityEngine.Object.Instantiate(templateGo, root.transform, false);
@@ -785,6 +808,10 @@ namespace Megabonk.Multiplayer
 
                 var remote = root.GetComponent<RemoteAvatar>() ?? root.AddComponent<RemoteAvatar>();
                 remote.BindAnimatorFromRoot(root.transform, $"Template[{peerId}]");
+                RemoteStatRegistry.RegisterPlayerHealth(root, GetStatsForPeer(peerId));
+                RemoteStatRegistry.RegisterPlayerStats(root, GetStatsForPeer(peerId));
+
+                root.SetActive(true);
 
                 MultiplayerPlugin.LogS.LogInfo($"[NetDriverCore] Cloned template '{templateGo.name}' for peer {peerId}");
                 return root;
@@ -805,7 +832,8 @@ namespace Megabonk.Multiplayer
                 if (appearance.CharacterId >= 0)
                 {
                     var character = (ECharacter)appearance.CharacterId;
-                    if (SkinPrefabRegistry.TryCreateRemoteAvatar(character, appearance.SkinName, spawnPos, spawnRot, peerId, out var avatarRoot, out var renderer))
+                    var stats = GetStatsForPeer(peerId);
+                    if (SkinPrefabRegistry.TryCreateRemoteAvatar(character, appearance.SkinName, spawnPos, spawnRot, peerId, stats, out var avatarRoot, out var renderer))
                     {
                         var remote = avatarRoot.GetComponent<RemoteAvatar>() ?? avatarRoot.AddComponent<RemoteAvatar>();
                         remote.BindRenderer(renderer, $"NetDriverCore[{peerId}]");
@@ -837,6 +865,13 @@ namespace Megabonk.Multiplayer
 
             _appliedAppearanceByPeer.Remove(peerId);
             return null;
+        }
+
+        private StatSnapshot GetStatsForPeer(ulong peerId)
+        {
+            if (_statsByPeer.TryGetValue(peerId, out var stats) && stats != null)
+                return stats;
+            return StatSnapshot.Empty;
         }
 
         private string DescribeAppearanceCharacter(ulong peerId)
@@ -1161,6 +1196,7 @@ namespace Megabonk.Multiplayer
             UnityEngine.Object.Destroy(current.gameObject);
             var upgraded = upgradedGo.GetComponent<RemoteAvatar>() ?? upgradedGo.AddComponent<RemoteAvatar>();
             upgraded.ApplyPose(currentPos, currentRot);
+            RemoteStatRegistry.RegisterPlayerHealth(upgradedGo, GetStatsForPeer(peerId));
             _remoteAvatars[peerId] = upgraded;
             _appliedAppearanceByPeer[peerId] = appearance;
             MultiplayerPlugin.LogS.LogInfo($"[NetDriverCore] Upgraded avatar for peer {peerId} to character {DescribeAppearanceCharacter(peerId)}");
@@ -1347,6 +1383,65 @@ namespace Megabonk.Multiplayer
             BroadcastAppearance(appearance, payload);
         }
 
+        internal void SendInputState(ushort sequence, float deltaTime, Vector2 move, Vector2 look, PlayerInputButtons buttons)
+        {
+            if (_transport == null)
+                return;
+
+            if (_isHost)
+            {
+                _latestInputByPeer[_localPeerId] = new InputSample
+                {
+                    Sequence = sequence,
+                    DeltaTime = deltaTime,
+                    Move = move,
+                    Look = look,
+                    Buttons = buttons
+                };
+                return;
+            }
+
+            var writer = new NetDataWriter();
+            writer.Put((byte)NetMsgType.INPUT);
+            writer.Put(sequence);
+            writer.Put(deltaTime);
+            writer.Put(move.x);
+            writer.Put(move.y);
+            writer.Put(look.x);
+            writer.Put(look.y);
+            writer.Put((ushort)buttons);
+
+            (_transport as LiteNetTransport)?.SendToHost(writer, false);
+        }
+
+        internal bool TryGetLatestInput(ulong peerId, out ushort sequence, out float deltaTime, out Vector2 move, out Vector2 look, out PlayerInputButtons buttons)
+        {
+            if (_latestInputByPeer.TryGetValue(peerId, out var sample))
+            {
+                sequence = sample.Sequence;
+                deltaTime = sample.DeltaTime;
+                move = sample.Move;
+                look = sample.Look;
+                buttons = sample.Buttons;
+                return true;
+            }
+
+            sequence = 0;
+            deltaTime = 0f;
+            move = Vector2.zero;
+            look = Vector2.zero;
+            buttons = PlayerInputButtons.None;
+            return false;
+        }
+
+        private struct InputSample
+        {
+            public ushort Sequence;
+            public float DeltaTime;
+            public Vector2 Move;
+            public Vector2 Look;
+            public PlayerInputButtons Buttons;
+        }
         private static bool TemplateHasRenderable(Transform template)
         {
             if (!template)
@@ -1374,4 +1469,6 @@ namespace Megabonk.Multiplayer
         }
     }
 }
+
+
 

@@ -12,7 +12,8 @@ namespace Megabonk.Multiplayer
         START_RUN = 3,
         PAWN_SPAWN = 4,
         PAWN_DESPAWN = 5,
-        PAWN_TRANSFORM = 6
+        PAWN_TRANSFORM = 6,
+        INPUT = 8
     }
 
     internal static class NetMsgUtil

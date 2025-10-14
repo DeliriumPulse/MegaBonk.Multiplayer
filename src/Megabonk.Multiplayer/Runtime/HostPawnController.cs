@@ -219,7 +219,8 @@ namespace Megabonk.Multiplayer
                 MaterialNames = Array.Empty<string>(),
                 CharacterClass = string.Empty, // TODO: fill from player data if available
                 CharacterId = -1,
-                SkinName = string.Empty
+                SkinName = string.Empty,
+                Stats = StatSnapshot.Empty
             };
 
             if (SkinPrefabRegistry.TryGetDescriptor(visual, out var descriptor))
@@ -227,6 +228,9 @@ namespace Megabonk.Multiplayer
                 appearance.CharacterId = (int)descriptor.Character;
                 appearance.SkinName = descriptor.SkinName ?? string.Empty;
             }
+
+            if (StatSnapshotBuilder.TryCapture(out var stats))
+                appearance.Stats = stats;
 
             var payload = AppearanceSerializer.Serialize(appearance);
             if (string.Equals(payload, _lastAppearancePayload, StringComparison.Ordinal))

@@ -369,7 +369,7 @@ namespace Megabonk.Multiplayer
             return false;
         }
 
-        public static bool TryCreateRemoteAvatar(ECharacter character, string skinName, Vector3 position, Quaternion rotation, ulong peerId, out GameObject avatarRoot, out PlayerRenderer renderer)
+        public static bool TryCreateRemoteAvatar(ECharacter character, string skinName, Vector3 position, Quaternion rotation, ulong peerId, StatSnapshot stats, out GameObject avatarRoot, out PlayerRenderer renderer)
         {
             avatarRoot = null;
             renderer = null;
@@ -404,7 +404,7 @@ namespace Megabonk.Multiplayer
             EnsureCharacterTemplate(characterData);
 
             if (_playerRendererPathAvailable &&
-                TryCreateRemoteAvatarViaRenderer(character, characterData, effectiveSkin, normalizedSkin, position, rotation, peerId, out avatarRoot, out renderer))
+                TryCreateRemoteAvatarViaRenderer(character, characterData, effectiveSkin, normalizedSkin, position, rotation, peerId, stats, out avatarRoot, out renderer))
                 return true;
 
             try
@@ -434,6 +434,7 @@ namespace Megabonk.Multiplayer
                 }
 
                 var root = new GameObject($"RemotePlayer_{peerId}");
+                root.SetActive(false);
                 root.transform.SetPositionAndRotation(position, rotation);
 
                 var rendererContainer = UnityEngine.Object.Instantiate(template, root.transform, false);
@@ -482,6 +483,11 @@ namespace Megabonk.Multiplayer
                     remote.BindRenderer(playerRenderer, $"SkinRegistry.Template[{peerId}]");
                 else
                     remote.BindAnimatorFromRoot(root.transform, $"SkinRegistry.Template[{peerId}]");
+
+                RemoteStatRegistry.RegisterPlayerHealth(root, stats);
+                RemoteStatRegistry.RegisterPlayerStats(root, stats);
+
+                root.SetActive(true);
 
                 avatarRoot = root;
                 renderer = playerRenderer;
@@ -821,7 +827,7 @@ namespace Megabonk.Multiplayer
             }
         }
 
-        private static bool TryCreateRemoteAvatarViaRenderer(ECharacter character, CharacterData characterData, SkinData skin, string skinName, Vector3 position, Quaternion rotation, ulong peerId, out GameObject avatarRoot, out PlayerRenderer renderer)
+        private static bool TryCreateRemoteAvatarViaRenderer(ECharacter character, CharacterData characterData, SkinData skin, string skinName, Vector3 position, Quaternion rotation, ulong peerId, StatSnapshot stats, out GameObject avatarRoot, out PlayerRenderer renderer)
         {
             avatarRoot = null;
             renderer = null;
@@ -832,6 +838,7 @@ namespace Megabonk.Multiplayer
             try
             {
                 root = new GameObject($"RemotePlayer_{peerId}");
+                root.SetActive(false);
                 root.transform.SetPositionAndRotation(position, rotation);
 
                 rendererContainer = new GameObject("Renderer");
@@ -848,7 +855,7 @@ namespace Megabonk.Multiplayer
 
                 ApplyRendererDefaults(characterData.eCharacter, playerRenderer, $"SkinRegistry.Remote[{peerId}]");
 
-                using (RemoteStatScope.Enter())
+                using (RemoteStatScope.Enter(stats))
                 {
                     var inventory = new PlayerInventory(characterData, true);
                     playerRenderer.SetCharacter(characterData, inventory, position);
@@ -884,6 +891,10 @@ namespace Megabonk.Multiplayer
 
                 var remote = root.GetComponent<RemoteAvatar>() ?? root.AddComponent<RemoteAvatar>();
                 remote.BindRenderer(playerRenderer, $"SkinRegistry.Remote[{peerId}]");
+                RemoteStatRegistry.RegisterPlayerHealth(root, stats);
+                RemoteStatRegistry.RegisterPlayerStats(root, stats);
+
+                root.SetActive(true);
 
                 avatarRoot = root;
                 renderer = playerRenderer;

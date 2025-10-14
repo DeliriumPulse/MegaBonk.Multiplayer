@@ -8,27 +8,61 @@ namespace Megabonk.Multiplayer
         [ThreadStatic]
         private static bool _active;
 
+        [ThreadStatic]
+        private static StatSnapshot _snapshot;
+
         public static bool IsActive => _active;
 
         private struct Scope : IDisposable
         {
             private readonly bool _previous;
+            private readonly StatSnapshot _previousSnapshot;
 
-            public Scope(bool previous) => _previous = previous;
+            public Scope(bool previous, StatSnapshot previousSnapshot)
+            {
+                _previous = previous;
+                _previousSnapshot = previousSnapshot;
+            }
 
-            public void Dispose() => _active = _previous;
+            public void Dispose()
+            {
+                _active = _previous;
+                _snapshot = _previousSnapshot;
+            }
         }
 
-        public static IDisposable Enter() => new Scope(Push());
+        public static IDisposable Enter(StatSnapshot snapshot)
+        {
+            var previousSnapshot = _snapshot;
+            var previous = Push(snapshot);
+            return new Scope(previous, previousSnapshot);
+        }
 
-        private static bool Push()
+        private static bool Push(StatSnapshot snapshot)
         {
             var previous = _active;
+            _snapshot = snapshot ?? StatSnapshot.Empty;
             _active = true;
             return previous;
         }
 
         public static float GetFallback(EStat stat)
+        {
+            if (_snapshot != null && _snapshot.TryGet(stat, out var value))
+                return value;
+
+            return GetDefault(stat);
+        }
+
+        public static float GetFallback(EStat stat, StatSnapshot snapshot)
+        {
+            if (snapshot != null && snapshot.TryGet(stat, out var value))
+                return value;
+
+            return GetDefault(stat);
+        }
+
+        private static float GetDefault(EStat stat)
         {
             switch (stat)
             {

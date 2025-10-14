@@ -10,7 +10,7 @@ namespace Megabonk.Multiplayer
 
         public static string Serialize(in AppearanceInfo info)
         {
-            var fields = new string[7];
+            var fields = new string[8];
             fields[0] = Encode(info.RootPath);
             fields[1] = Encode(info.PrefabName);
             fields[2] = Encode(info.MeshName);
@@ -18,6 +18,7 @@ namespace Megabonk.Multiplayer
             fields[4] = Encode(info.CharacterClass);
             fields[5] = EncodeInt(info.CharacterId);
             fields[6] = Encode(info.SkinName);
+            fields[7] = Encode(StatSnapshot.Serialize(info.Stats ?? StatSnapshot.Empty));
             return string.Join(FieldSeparator, fields);
         }
 
@@ -30,7 +31,7 @@ namespace Megabonk.Multiplayer
             var parts = payload.Split(FieldSeparator);
             if (parts.Length < 7)
             {
-                var expanded = new string[7];
+                var expanded = new string[8];
                 for (int i = 0; i < parts.Length; i++)
                     expanded[i] = parts[i];
                 parts = expanded;
@@ -44,7 +45,8 @@ namespace Megabonk.Multiplayer
                 MaterialNames = DecodeMaterials(parts.Length > 3 ? parts[3] : string.Empty),
                 CharacterClass = Decode(parts.Length > 4 ? parts[4] : string.Empty),
                 CharacterId = parts.Length > 5 ? DecodeInt(parts[5]) : -1,
-                SkinName = Decode(parts.Length > 6 ? parts[6] : string.Empty)
+                SkinName = Decode(parts.Length > 6 ? parts[6] : string.Empty),
+                Stats = StatSnapshot.Deserialize(Decode(parts.Length > 7 ? parts[7] : string.Empty))
             };
 
             return true;

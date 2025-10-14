@@ -31,11 +31,29 @@ namespace Megabonk.Multiplayer
         // Register types so AddComponent works under IL2CPP
         public static void EnsureRegistered()
         {
-            // Do NOT assign the delegate here!
-            ClassInjector.RegisterTypeInIl2Cpp<NetDriverShim>();
-            ClassInjector.RegisterTypeInIl2Cpp<ShimCoroutineRunner>();
-            ClassInjector.RegisterTypeInIl2Cpp<Megabonk.Multiplayer.Transport.LiteNetTransportRunner>();
+            if (_registered)
+                return;
+
+            void Register(Type type)
+            {
+                try { ClassInjector.RegisterTypeInIl2Cpp(type); }
+                catch (ArgumentException) { /* already injected */ }
+            }
+
+            Register(typeof(NetDriverShim));
+            Register(typeof(ShimCoroutineRunner));
+            Register(typeof(Megabonk.Multiplayer.Transport.LiteNetTransportRunner));
+            Register(typeof(InputDriver));
+            Register(typeof(HostPawnController));
+            Register(typeof(CameraFollower));
+            Register(typeof(AnimatorSyncSource));
+            Register(typeof(RemoteAvatar));
+            Register(typeof(NetDriverCoreUpdater));
+
+            _registered = true;
         }
+
+        private static bool _registered;
 
         private void Awake()
         {

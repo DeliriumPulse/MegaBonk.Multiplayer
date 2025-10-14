@@ -25,6 +25,7 @@ namespace Megabonk.Multiplayer
 
             __result = RemoteStatScope.GetFallback(stat);
             MultiplayerPlugin.LogS?.LogWarning($"[PlayerStats] Exception for {stat}: {__exception.Message}; returning fallback {__result}");
+            MultiplayerPlugin.LogS?.LogDebug($"[PlayerStats] Stack trace for {stat}:{Environment.NewLine}{Environment.StackTrace}");
             return null;
         }
     }
