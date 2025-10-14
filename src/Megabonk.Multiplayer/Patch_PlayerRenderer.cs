@@ -1,5 +1,8 @@
 using System;
+using System.Collections.Generic;
+using System.Reflection;
 using Assets.Scripts._Data;
+using Assets.Scripts.Actors;
 using Assets.Scripts.Actors.Player;
 using Assets.Scripts.Inventory__Items__Pickups;
 using HarmonyLib;
@@ -75,4 +78,91 @@ namespace Megabonk.Multiplayer
             }
         }
     }
+
+    [HarmonyPatch(typeof(PlayerRenderer))]
+    internal static class Patch_PlayerRenderer_OnDamage
+    {
+        private static IEnumerable<MethodBase> TargetMethods()
+        {
+            var methods = AccessTools.GetDeclaredMethods(typeof(PlayerRenderer));
+            for (int i = 0; i < methods.Count; i++)
+            {
+                var method = methods[i];
+                if (method != null && method.Name == nameof(PlayerRenderer.OnDamage))
+                    yield return method;
+            }
+        }
+
+        private static bool Prefix(PlayerRenderer __instance)
+        {
+            return PlayerRendererLayerGuard.ShouldRun(__instance);
+        }
+    }
+
+    internal static class PlayerRendererLayerGuard
+    {
+        private static int _playerLayer = -2;
+
+        private static int PlayerLayer
+        {
+            get
+            {
+                if (_playerLayer == -2)
+                {
+                    try
+                    {
+                        _playerLayer = LayerMask.NameToLayer("Player");
+                    }
+                    catch
+                    {
+                        _playerLayer = -1;
+                    }
+                }
+                return _playerLayer;
+            }
+        }
+
+        internal static bool ShouldRun(PlayerRenderer renderer)
+        {
+            if (renderer == null)
+                return true;
+
+            var go = renderer.gameObject;
+            if (!go)
+                return true;
+
+            int playerLayer = PlayerLayer;
+            bool isOnPlayerLayer = playerLayer >= 0 && go.layer == playerLayer;
+            bool hasRemote = renderer.GetComponentInParent<RemoteAvatar>() != null;
+
+            MultiplayerPlugin.LogS?.LogDebug($"[DamageGuard] renderer={go.name} layer={go.layer} playerLayer={PlayerLayer} remote={hasRemote}");
+
+            if (hasRemote)
+            {
+                if (!isOnPlayerLayer)
+                    return false;
+
+                MultiplayerPlugin.LogS?.LogDebug($"[DamageGuard] Remote renderer '{go.name}' still on Player layer. Forcing to Default.");
+                SetLayerRecursive(go.transform, LayerMask.NameToLayer("Default"));
+                return false;
+            }
+
+            return true;
+        }
+
+        private static void SetLayerRecursive(Transform root, int layer)
+        {
+            if (!root)
+                return;
+
+            root.gameObject.layer = layer;
+            for (int i = 0; i < root.childCount; i++)
+            {
+                var child = root.GetChild(i);
+                if (child)
+                    SetLayerRecursive(child, layer);
+            }
+        }
+    }
 }
+

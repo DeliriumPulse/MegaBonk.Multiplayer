@@ -1,5 +1,8 @@
 using System;
 using Assets.Scripts._Data;
+using Assets.Scripts.Actors;
+using Assets.Scripts.Actors.Player;
+using Assets.Scripts.Inventory__Items__Pickups;
 using System.Collections;
 using System.Reflection;
 using BepInEx;
@@ -51,6 +54,19 @@ namespace Megabonk.Multiplayer
             ClassInjector.RegisterTypeInIl2Cpp<HostPawnController>();
             ClassInjector.RegisterTypeInIl2Cpp<RemoteAvatar>();
             ClassInjector.RegisterTypeInIl2Cpp<PatchBootstrapper>();
+
+            try
+            {
+                var onDamage = AccessTools.Method(typeof(PlayerRenderer), "OnDamage", new Type[] { typeof(PlayerHealth), typeof(DamageContainer), typeof(bool) });
+                if (onDamage != null)
+                    LogS?.LogInfo($"[Diagnostics] PlayerRenderer.OnDamage located -> {onDamage}");
+                else
+                    LogS?.LogWarning("[Diagnostics] PlayerRenderer.OnDamage not found.");
+            }
+            catch (Exception diagEx)
+            {
+                LogS?.LogWarning($"[Diagnostics] Failed to probe PlayerRenderer.OnDamage: {diagEx.Message}");
+            }
 
             // Bootstrap persistent network holder
             var go = new GameObject("Megabonk.Net");
@@ -127,6 +143,7 @@ namespace Megabonk.Multiplayer
                     SafePatch(typeof(Patch_PlayerStats));
                     SafePatch(typeof(Patch_PlayerHealth_UpdateMaxValues));
                     SafePatch(typeof(Patch_PlayerRenderer));
+                    SafePatch(typeof(Patch_PlayerRenderer_OnDamage));
                     SafePatch(typeof(Patch_MyButtonCharacter));
                     SafePatch(typeof(Patch_CharacterInfoUI));
 
