@@ -116,7 +116,7 @@ namespace Megabonk.Multiplayer
                 var tf = transforms[i];
                 if (!IsUsable(tf) || IsCameraRig(tf))
                     continue;
-                var renderer = tf.GetComponent<SkinnedMeshRenderer>();
+            var renderer = Il2CppComponentUtil.GetComponentCompat<SkinnedMeshRenderer>(tf);
                 if (renderer != null)
                 {
                     var animator = FindInParents<Animator>(renderer.transform);
@@ -204,7 +204,7 @@ namespace Megabonk.Multiplayer
             var current = transform;
             while (current != null)
             {
-                if (current.GetComponent<T>() != null)
+                if (Il2CppComponentUtil.GetComponentCompat<T>(current) != null)
                     return current;
                 current = current.parent;
             }
@@ -216,7 +216,7 @@ namespace Megabonk.Multiplayer
                 return null;
             if (includeSelf)
             {
-                var candidate = root.GetComponent<T>();
+                var candidate = Il2CppComponentUtil.GetComponentCompat<T>(root);
                 if (candidate != null && (includeInactive || candidate.gameObject.activeInHierarchy))
                     return candidate;
             }
@@ -325,13 +325,13 @@ namespace Megabonk.Multiplayer
             var tags = _componentScratch;
             tags.Clear();
 
-            if (node.GetComponent<Animator>() != null)
+            if (Il2CppComponentUtil.GetComponentCompat<Animator>(node) != null)
                 tags.Add("Animator");
-            if (node.GetComponent<SkinnedMeshRenderer>() != null)
+            if (Il2CppComponentUtil.GetComponentCompat<SkinnedMeshRenderer>(node) != null)
                 tags.Add("SkinnedMeshRenderer");
-            if (node.GetComponent<MeshRenderer>() != null)
+            if (Il2CppComponentUtil.GetComponentCompat<MeshRenderer>(node) != null)
                 tags.Add("MeshRenderer");
-            if (node.GetComponent<SkinnedMeshRenderer>()?.sharedMesh != null)
+            if (Il2CppComponentUtil.GetComponentCompat<SkinnedMeshRenderer>(node)?.sharedMesh != null)
                 tags.Add("HasMesh");
 
             if (tags.Count > 0)
@@ -417,7 +417,7 @@ namespace Megabonk.Multiplayer
             if (!visual)
                 return false;
 
-            if (visual.GetComponent<SkinnedMeshRenderer>()?.sharedMesh != null)
+            if (Il2CppComponentUtil.GetComponentCompat<SkinnedMeshRenderer>(visual)?.sharedMesh != null)
                 return true;
 
             var childSmr = FindInHierarchy<SkinnedMeshRenderer>(visual, includeInactive: true, includeSelf: false);
@@ -466,7 +466,7 @@ namespace Megabonk.Multiplayer
         {
             if (!tf)
                 return false;
-            if (tf.GetComponent<Camera>() != null)
+            if (Il2CppComponentUtil.GetComponentCompat<Camera>(tf) != null)
                 return true;
             var name = tf.name.ToLowerInvariant();
             return name.Contains("camera") || name.Contains("cine") || name.Contains("virtual");

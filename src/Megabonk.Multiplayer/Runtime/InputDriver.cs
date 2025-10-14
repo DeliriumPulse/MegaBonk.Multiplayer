@@ -18,6 +18,7 @@ namespace Megabonk.Multiplayer
         private const float REFRESH_EVERY = 2f;
         private string _lastAppearancePayload;
         private static InputDriver _active;
+        private bool _hasLocalVisual;
 
         private void Start()
         {
@@ -49,6 +50,7 @@ namespace Megabonk.Multiplayer
             _refreshTimer = 0f;
             _txTimer = 0f;
             _lastAppearancePayload = null;
+            _hasLocalVisual = false;
             ResolveSource("character");
         }
 
@@ -100,6 +102,12 @@ namespace Megabonk.Multiplayer
             if (TryResolveFromMyPlayer(phase))
                 return;
 
+            if (!_hasLocalVisual)
+            {
+                MultiplayerPlugin.LogS?.LogDebug($"[InputDriver] {phase}: waiting for local player model, skipping shared locator.");
+                return;
+            }
+
             var resolved = PlayerModelLocator.Find(transform, $"InputDriver.{phase}", allowFallback: false);
             if (resolved != null)
             {
@@ -117,6 +125,9 @@ namespace Megabonk.Multiplayer
         private void TryRefreshSource()
         {
             if (TryResolveFromMyPlayer("refresh"))
+                return;
+
+            if (!_hasLocalVisual)
                 return;
 
             var refreshed = PlayerModelLocator.Find(_source, "InputDriver.refresh", allowFallback: false);
@@ -220,6 +231,8 @@ namespace Megabonk.Multiplayer
                 PlayerModelLocator.RegisterKnownVisual(transform, _source, $"InputDriver.{phase}.MyPlayer");
                 PlayerModelLocator.RegisterKnownVisual(playerRenderer.transform, _source, $"InputDriver.{phase}.MyPlayerRenderer");
                 SkinPrefabRegistry.RegisterCharacterData(playerRenderer.characterData);
+                AnimatorSyncSource.Ensure(_core, playerRenderer, $"InputDriver.{phase}");
+                _hasLocalVisual = true;
                 MultiplayerPlugin.LogS?.LogInfo($"[InputDriver] {phase} (MyPlayer) -> {PlayerModelLocator.Describe(_source)}");
                 BroadcastAppearance();
                 return true;

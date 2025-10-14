@@ -53,7 +53,7 @@ namespace Megabonk.Multiplayer.Transport
             _listener.NetworkReceiveEvent += OnNetworkReceive;
 
             LiteNetTransportRunner.Ensure(_net);
-            Megabonk.Multiplayer.MultiplayerPlugin.LogS.LogInfo("[LiteNetTransport] Transport created.");
+            Megabonk.Multiplayer.MultiplayerPlugin.LogS?.LogDebug("[LiteNetTransport] Transport created.");
         }
 		// --------------------------------------------------------------------
 		// Accessors used by LiteNetTransportRunner for rebinding
@@ -77,7 +77,7 @@ namespace Megabonk.Multiplayer.Transport
                 System.Threading.Thread.Sleep(10);
             }
 
-            Megabonk.Multiplayer.MultiplayerPlugin.LogS.LogInfo($"[LiteNetTransport] Host started on port {_hostPort}");
+            Megabonk.Multiplayer.MultiplayerPlugin.LogS?.LogDebug($"[LiteNetTransport] Host started on port {_hostPort}");
         }
 
         public void StartClient(string hostAddress, int port, string key, ulong _)
@@ -92,7 +92,7 @@ namespace Megabonk.Multiplayer.Transport
 			try
 			{
 				_net.Start(System.Net.IPAddress.Any, System.Net.IPAddress.Any, tryPort);
-				Megabonk.Multiplayer.MultiplayerPlugin.LogS.LogInfo($"[LiteNetTransport] Client bound to local port {tryPort}");
+				Megabonk.Multiplayer.MultiplayerPlugin.LogS?.LogDebug($"[LiteNetTransport] Client bound to local port {tryPort}");
 			}
 			catch (Exception e)
 			{
@@ -101,7 +101,7 @@ namespace Megabonk.Multiplayer.Transport
 			}
 
 			_net.Connect(_hostAddress, _hostPort, _key);
-			Megabonk.Multiplayer.MultiplayerPlugin.LogS.LogInfo($"[LiteNetTransport] Client connecting to {_hostAddress}:{_hostPort}");
+			Megabonk.Multiplayer.MultiplayerPlugin.LogS?.LogDebug($"[LiteNetTransport] Client connecting to {_hostAddress}:{_hostPort}");
 		}
 		
 
@@ -130,7 +130,7 @@ namespace Megabonk.Multiplayer.Transport
 				writer.Put(id);
 				peer.Send(writer, DeliveryMethod.ReliableOrdered);
 
-				Megabonk.Multiplayer.MultiplayerPlugin.LogS.LogInfo($"[LiteNetTransport] Host registered client {peer.EndPoint} → ID={id}");
+				Megabonk.Multiplayer.MultiplayerPlugin.LogS?.LogDebug($"[LiteNetTransport] Host registered client {peer.EndPoint} → ID={id}");
 			}
 			else
 			{
@@ -139,7 +139,7 @@ namespace Megabonk.Multiplayer.Transport
 				_idToPeer[id] = peer;
 				_epToId[peer.EndPoint.ToString()] = id;
 				_connectedPeers.Add(peer);
-				Megabonk.Multiplayer.MultiplayerPlugin.LogS.LogInfo($"[LiteNetTransport] Client connected to host {peer.EndPoint}, ID={id}");
+				Megabonk.Multiplayer.MultiplayerPlugin.LogS?.LogDebug($"[LiteNetTransport] Client connected to host {peer.EndPoint}, ID={id}");
 			}
 
 			PeerConnected?.Invoke(id);
@@ -151,7 +151,7 @@ namespace Megabonk.Multiplayer.Transport
 			if (_idToPeer.TryGetValue(0, out var hostPeer))
 			{
 				hostPeer.Send(writer, reliable ? DeliveryMethod.ReliableOrdered : DeliveryMethod.Unreliable);
-				Megabonk.Multiplayer.MultiplayerPlugin.LogS.LogInfo("[LiteNetTransport] Sent message to host.");
+				Megabonk.Multiplayer.MultiplayerPlugin.LogS?.LogDebug("[LiteNetTransport] Sent message to host.");
 			}
 		}
 
@@ -204,7 +204,7 @@ namespace Megabonk.Multiplayer.Transport
 				_idToPeer.Remove(id);
 				_epToId.Remove(peer.EndPoint.ToString());
 				_connectedPeers.Remove(peer);
-				Megabonk.Multiplayer.MultiplayerPlugin.LogS.LogInfo($"[LiteNetTransport] Peer {id} disconnected.");
+				Megabonk.Multiplayer.MultiplayerPlugin.LogS?.LogDebug($"[LiteNetTransport] Peer {id} disconnected.");
 				PeerDisconnected?.Invoke(id);
 			}
 		}
@@ -233,7 +233,7 @@ namespace Megabonk.Multiplayer.Transport
 
 			bool reliable = deliveryMethod != DeliveryMethod.Unreliable && deliveryMethod != DeliveryMethod.Sequenced;
 
-			Megabonk.Multiplayer.MultiplayerPlugin.LogS.LogInfo(
+			Megabonk.Multiplayer.MultiplayerPlugin.LogS?.LogDebug(
 				$"[LiteNetTransport] Packet received from {peer.EndPoint}, bytes={len}, firstByte={(len>0?tmp[0]:255):X2}, mappedId={id}");
 
 			if (id == 0 && IsServer)
@@ -270,7 +270,7 @@ namespace Megabonk.Multiplayer.Transport
 				}
 			}
 
-			Megabonk.Multiplayer.MultiplayerPlugin.LogS.LogInfo(
+			Megabonk.Multiplayer.MultiplayerPlugin.LogS?.LogDebug(
 				$"[LiteNetTransport] SendToAll → {data.Length} bytes, reliable={reliable}");
 		}
 
@@ -291,7 +291,7 @@ namespace Megabonk.Multiplayer.Transport
 			try
 			{
 				peer.Send(data, 0, data.Length, method);       // explicit offset + length
-				Megabonk.Multiplayer.MultiplayerPlugin.LogS.LogInfo(
+				Megabonk.Multiplayer.MultiplayerPlugin.LogS?.LogDebug(
 					$"[LiteNetTransport] Sent {data.Length} bytes to {peer.EndPoint}");
 			}
 			catch (Exception e)

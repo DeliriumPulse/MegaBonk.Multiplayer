@@ -96,10 +96,4 @@
     <OutputPath>bin\$(Configuration)\net6.0\</OutputPath>
   </PropertyGroup>
 
-  <ItemGroup>
-    <Compile Remove="multibonk\**\*.cs" />
-    <None Remove="multibonk\**\*" />
-    <EmbeddedResource Remove="multibonk\**\*" />
-  </ItemGroup>
-
 </Project>

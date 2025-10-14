@@ -24,6 +24,8 @@ namespace Megabonk.Multiplayer
 
     public class NetDriverCore
     {
+        private const byte MSG_ANIMATOR = 0x07;
+
         private readonly ITransport _transport;
         private readonly bool _isHost;
         private readonly string _hostAddress;
@@ -311,6 +313,74 @@ namespace Megabonk.Multiplayer
                         break;
                     }
 
+                    case MSG_ANIMATOR:
+                    {
+                        ulong senderId = reader.GetULong();
+                        float speed = reader.GetFloat();
+
+                        int layerCount = reader.GetByte();
+                        var layerStates = layerCount > 0 ? new AnimatorLayerState[layerCount] : Array.Empty<AnimatorLayerState>();
+                        for (int i = 0; i < layerCount; i++)
+                        {
+                            int layerIndex = reader.GetByte();
+                            int stateHash = reader.GetInt();
+                            float normalizedTime = reader.GetFloat();
+                            float weight = reader.GetFloat();
+                            bool inTransition = reader.GetBool();
+                            int nextStateHash = reader.GetInt();
+                            float nextNormalized = reader.GetFloat();
+                            float transitionNormalized = reader.GetFloat();
+                            layerStates[i] = new AnimatorLayerState(layerIndex, stateHash, normalizedTime, weight, inTransition, nextStateHash, nextNormalized, transitionNormalized);
+                        }
+
+                        int paramCount = reader.GetUShort();
+                        var paramStates = paramCount > 0 ? new AnimatorParameterState[paramCount] : Array.Empty<AnimatorParameterState>();
+                        for (int i = 0; i < paramCount; i++)
+                        {
+                            int hash = reader.GetInt();
+                            var type = (AnimatorControllerParameterType)reader.GetByte();
+                            float floatValue = 0f;
+                            int intValue = 0;
+                            bool boolValue = false;
+                            switch (type)
+                            {
+                                case AnimatorControllerParameterType.Float:
+                                    floatValue = reader.GetFloat();
+                                    break;
+                                case AnimatorControllerParameterType.Int:
+                                    intValue = reader.GetInt();
+                                    break;
+                                case AnimatorControllerParameterType.Bool:
+                                    boolValue = reader.GetBool();
+                                    break;
+                                default:
+                                    intValue = reader.GetInt();
+                                    break;
+                            }
+                            paramStates[i] = new AnimatorParameterState(hash, type, floatValue, intValue, boolValue);
+                        }
+
+                        var snapshot = new AnimatorSnapshot(paramStates, layerStates, speed);
+
+                        _mainThreadActions.Enqueue(() =>
+                        {
+                            if (_remoteAvatars.TryGetValue(senderId, out var avatar) && avatar != null)
+                                avatar.ApplyAnimatorSnapshot(snapshot);
+                        });
+
+                        if (_isHost)
+                        {
+                            foreach (var target in _remoteAvatars.Keys)
+                            {
+                                if (target == senderId)
+                                    continue;
+
+                                _transport.SendTo(target, data.ToArray(), false);
+                            }
+                        }
+                        break;
+                    }
+
                     default:
                         MultiplayerPlugin.LogS.LogInfo($"[NetDriverCore] Unknown packet tag={tag} from {peerId}, length={data.Count}");
                         break;
@@ -514,6 +584,71 @@ namespace Megabonk.Multiplayer
             MultiplayerPlugin.LogS?.LogInfo($"[NetDriverCore] Appearance broadcast: prefab={prefabLabel}, mesh={appearance.MeshName} (peer {_localPeerId})");
         }
 
+        internal void SendAnimatorState(List<AnimatorParameterState> parameters, List<AnimatorLayerState> layers, float speed)
+        {
+            if (_transport == null)
+                return;
+
+            if (!_isHost && _localPeerId == 0)
+                return;
+
+            int layerCount = layers?.Count ?? 0;
+            int paramCount = parameters?.Count ?? 0;
+
+            if (layerCount == 0 && paramCount == 0)
+                return;
+
+            var writer = new NetDataWriter();
+            writer.Put(MSG_ANIMATOR);
+            writer.Put(_localPeerId);
+            writer.Put(speed);
+
+            writer.Put((byte)layerCount);
+            if (layerCount > 0)
+            {
+                for (int i = 0; i < layerCount; i++)
+                {
+                    var layer = layers[i];
+                    writer.Put((byte)layer.LayerIndex);
+                    writer.Put(layer.StateHash);
+                    writer.Put(layer.NormalizedTime);
+                    writer.Put(layer.Weight);
+                    writer.Put(layer.InTransition);
+                    writer.Put(layer.NextStateHash);
+                    writer.Put(layer.NextNormalizedTime);
+                    writer.Put(layer.TransitionNormalizedTime);
+                }
+            }
+
+            writer.Put((ushort)paramCount);
+            if (paramCount > 0)
+            {
+                for (int i = 0; i < paramCount; i++)
+                {
+                    var param = parameters[i];
+                    writer.Put(param.Hash);
+                    writer.Put((byte)param.Type);
+                    switch (param.Type)
+                    {
+                        case AnimatorControllerParameterType.Float:
+                            writer.Put(param.FloatValue);
+                            break;
+                        case AnimatorControllerParameterType.Int:
+                            writer.Put(param.IntValue);
+                            break;
+                        case AnimatorControllerParameterType.Bool:
+                            writer.Put(param.BoolValue);
+                            break;
+                        default:
+                            writer.Put(param.IntValue);
+                            break;
+                    }
+                }
+            }
+
+            _transport.SendToAll(writer.CopyData(), false);
+        }
+
         // --------------------------------------------------------------------
         // Helpers
         // --------------------------------------------------------------------
@@ -598,6 +733,7 @@ namespace Megabonk.Multiplayer
 
             var avatar = go.GetComponent<RemoteAvatar>() ?? go.AddComponent<RemoteAvatar>();
             avatar.ApplyPose(spawnPos, spawnRot);
+            avatar.EnsureAnimatorBinding(go.transform, $"EnsureAvatar[{peerId}]");
 
             _remoteAvatars[peerId] = avatar;
             MultiplayerPlugin.LogS.LogInfo($"[NetDriverCore] EnsureAvatar -> {go.name} for peer {peerId} at {spawnPos}");
@@ -647,6 +783,9 @@ namespace Megabonk.Multiplayer
                 foreach (var rb in Il2CppComponentUtil.GetComponentsInChildrenCompat<Rigidbody>(root, true))
                     UnityEngine.Object.Destroy(rb);
 
+                var remote = root.GetComponent<RemoteAvatar>() ?? root.AddComponent<RemoteAvatar>();
+                remote.BindAnimatorFromRoot(root.transform, $"Template[{peerId}]");
+
                 MultiplayerPlugin.LogS.LogInfo($"[NetDriverCore] Cloned template '{templateGo.name}' for peer {peerId}");
                 return root;
             }
@@ -669,6 +808,7 @@ namespace Megabonk.Multiplayer
                     if (SkinPrefabRegistry.TryCreateRemoteAvatar(character, appearance.SkinName, spawnPos, spawnRot, peerId, out var avatarRoot, out var renderer))
                     {
                         var remote = avatarRoot.GetComponent<RemoteAvatar>() ?? avatarRoot.AddComponent<RemoteAvatar>();
+                        remote.BindRenderer(renderer, $"NetDriverCore[{peerId}]");
                         remote.ApplyPose(spawnPos, spawnRot);
                         _appliedAppearanceByPeer[peerId] = appearance;
                         MultiplayerPlugin.LogS.LogInfo($"[NetDriverCore] Created remote avatar for peer {peerId} -> {character} ({appearance.SkinName})");

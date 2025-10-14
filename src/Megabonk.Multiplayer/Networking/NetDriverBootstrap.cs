@@ -21,6 +21,7 @@ namespace Megabonk.Multiplayer
             ClassInjector.RegisterTypeInIl2Cpp<InputDriver>();
             ClassInjector.RegisterTypeInIl2Cpp<HostPawnController>();
             ClassInjector.RegisterTypeInIl2Cpp<CameraFollower>();
+            ClassInjector.RegisterTypeInIl2Cpp<AnimatorSyncSource>();
             ClassInjector.RegisterTypeInIl2Cpp<RemoteAvatar>();
 
             // Transport runner that keeps LiteNetLib polling

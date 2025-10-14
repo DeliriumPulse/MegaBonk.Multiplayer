@@ -23,7 +23,10 @@ namespace Megabonk.Multiplayer
         private static readonly HashSet<ECharacter> _characterLookupFailures = new HashSet<ECharacter>();
         private static readonly HashSet<string> _skinLookupFailures = new HashSet<string>();
         private static readonly Dictionary<Transform, AppearanceDescriptor> _appearanceByVisual = new Dictionary<Transform, AppearanceDescriptor>();
+        private static readonly Dictionary<ECharacter, RendererDefaults> _rendererDefaults = new Dictionary<ECharacter, RendererDefaults>();
         private static readonly HashSet<MyButtonCharacter> _menuButtons = new HashSet<MyButtonCharacter>();
+        private static readonly HashSet<int> _renderStackLogged = new HashSet<int>();
+        private static bool _playerRendererPathAvailable = true;
 
         private static GameObject _collector;
         private static bool _menuRosterPrimed;
@@ -247,7 +250,7 @@ namespace Megabonk.Multiplayer
 
             if (_templates.TryGetValue(skin, out var existing) && existing)
             {
-                var existingVisual = existing.GetComponentInChildren<SkinnedMeshRenderer>(true)?.transform ?? existing.transform;
+                var existingVisual = Il2CppComponentUtil.GetComponentInChildrenCompat<SkinnedMeshRenderer>(existing, true)?.transform ?? existing.transform;
                 ModelRegistry.Register(existingVisual);
                 RegisterAppearance(null, existingVisual, skin);
                 return;
@@ -259,7 +262,7 @@ namespace Megabonk.Multiplayer
 
             _templates[skin] = clone;
 
-            var cloneVisual = clone.GetComponentInChildren<SkinnedMeshRenderer>(true)?.transform ?? clone.transform;
+            var cloneVisual = Il2CppComponentUtil.GetComponentInChildrenCompat<SkinnedMeshRenderer>(clone, true)?.transform ?? clone.transform;
             ModelRegistry.Register(cloneVisual);
             PlayerModelLocator.RegisterKnownVisual(clone.transform, cloneVisual, $"SkinRegistry[{skin.name}]");
             MultiplayerPlugin.LogS?.LogInfo($"[SkinRegistry] Captured template '{skin.name}' -> {PlayerModelLocator.Describe(cloneVisual)}");
@@ -312,9 +315,10 @@ namespace Megabonk.Multiplayer
 
             _characterTemplates[data.eCharacter] = clone;
 
-            var visual = clone.GetComponentInChildren<SkinnedMeshRenderer>(true)?.transform ?? clone.transform;
+            var visual = Il2CppComponentUtil.GetComponentInChildrenCompat<SkinnedMeshRenderer>(clone, true)?.transform ?? clone.transform;
             if (visual)
             {
+                CaptureRendererDefaults(data.eCharacter, clone);
                 ModelRegistry.Register(visual);
                 PlayerModelLocator.RegisterKnownVisual(clone.transform, visual, $"SkinRegistry.Character[{data.eCharacter}]");
 
@@ -399,7 +403,8 @@ namespace Megabonk.Multiplayer
 
             EnsureCharacterTemplate(characterData);
 
-            if (TryCreateRemoteAvatarViaRenderer(character, characterData, effectiveSkin, normalizedSkin, position, rotation, peerId, out avatarRoot, out renderer))
+            if (_playerRendererPathAvailable &&
+                TryCreateRemoteAvatarViaRenderer(character, characterData, effectiveSkin, normalizedSkin, position, rotation, peerId, out avatarRoot, out renderer))
                 return true;
 
             try
@@ -438,7 +443,7 @@ namespace Megabonk.Multiplayer
                 rendererContainer.transform.localRotation = Quaternion.identity;
                 EnableRenderStack(rendererContainer);
 
-                var playerRenderer = rendererContainer.GetComponentInChildren<PlayerRenderer>(true) ?? rendererContainer.GetComponent<PlayerRenderer>();
+                var playerRenderer = Il2CppComponentUtil.GetComponentInChildrenCompat<PlayerRenderer>(rendererContainer, true) ?? Il2CppComponentUtil.GetComponentCompat<PlayerRenderer>(rendererContainer);
 
                 Transform visual = null;
                 Transform locatorRoot = rendererContainer.transform;
@@ -471,6 +476,12 @@ namespace Megabonk.Multiplayer
                     ApplySkinToTemplate(rendererContainer, effectiveSkin);
 
                 RemovePhysicsComponents(root.transform);
+
+                var remote = root.GetComponent<RemoteAvatar>() ?? root.AddComponent<RemoteAvatar>();
+                if (playerRenderer != null)
+                    remote.BindRenderer(playerRenderer, $"SkinRegistry.Template[{peerId}]");
+                else
+                    remote.BindAnimatorFromRoot(root.transform, $"SkinRegistry.Template[{peerId}]");
 
                 avatarRoot = root;
                 renderer = playerRenderer;
@@ -524,8 +535,10 @@ namespace Megabonk.Multiplayer
             if (data == null)
                 return;
 
+            bool isNew = !_characterData.ContainsKey(data.eCharacter);
             _characterData[data.eCharacter] = data;
-            MultiplayerPlugin.LogS?.LogInfo($"[SkinRegistry] Registered CharacterData for {data.eCharacter} ({data.name})");
+            if (isNew)
+                MultiplayerPlugin.LogS?.LogInfo($"[SkinRegistry] Registered CharacterData for {data.eCharacter} ({data.name})");
             EnsureCharacterTemplate(data);
         }
 
@@ -693,9 +706,10 @@ namespace Megabonk.Multiplayer
             int meshEnabled = 0;
             int playerRendererTotal = 0;
 
-            List<string> disabledNotes = null;
-            List<string> skinnedDetails = null;
-            List<string> meshDetails = null;
+            bool shouldLog = MultiplayerPlugin.LogS != null && _renderStackLogged.Add(root.GetInstanceID());
+            List<string> disabledNotes = shouldLog ? new List<string>() : null;
+            List<string> skinnedDetails = shouldLog ? new List<string>() : null;
+            List<string> meshDetails = shouldLog ? new List<string>() : null;
 
             var animators = Il2CppComponentUtil.GetComponentsInChildrenCompat<Animator>(root, true);
             for (int i = 0; i < animators.Length; i++)
@@ -731,17 +745,15 @@ namespace Megabonk.Multiplayer
                     skinnedEnabled++;
                 }
 
-                if (renderer.forceRenderingOff || !renderer.gameObject.activeInHierarchy)
+                if (shouldLog && (renderer.forceRenderingOff || !renderer.gameObject.activeInHierarchy))
                 {
-                    disabledNotes ??= new List<string>();
                     disabledNotes.Add($"SkinnedMesh[{renderer.name}] active={renderer.gameObject.activeInHierarchy} forceOff={renderer.forceRenderingOff}");
                 }
                 renderer.forceRenderingOff = false;
                 renderer.updateWhenOffscreen = true;
 
-                if (MultiplayerPlugin.LogS != null)
+                if (shouldLog)
                 {
-                    skinnedDetails ??= new List<string>();
                     var meshName = renderer.sharedMesh ? renderer.sharedMesh.name : "<null>";
                     var bounds = renderer.bounds.size;
                     skinnedDetails.Add($"{DescribeRelative(root.transform, renderer.transform)} mesh={meshName} enabled={renderer.enabled} active={renderer.gameObject.activeInHierarchy} forceOff={renderer.forceRenderingOff} offscreen={renderer.updateWhenOffscreen} layer={renderer.gameObject.layer} bounds=({bounds.x:F2},{bounds.y:F2},{bounds.z:F2})");
@@ -767,18 +779,16 @@ namespace Megabonk.Multiplayer
                     meshEnabled++;
                 }
 
-                if (renderer.forceRenderingOff || !renderer.gameObject.activeInHierarchy)
+                if (shouldLog && (renderer.forceRenderingOff || !renderer.gameObject.activeInHierarchy))
                 {
-                    disabledNotes ??= new List<string>();
                     disabledNotes.Add($"Mesh[{renderer.name}] active={renderer.gameObject.activeInHierarchy} forceOff={renderer.forceRenderingOff}");
                 }
                 renderer.forceRenderingOff = false;
                 renderer.receiveShadows = true;
                 renderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.On;
 
-                if (MultiplayerPlugin.LogS != null)
+                if (shouldLog)
                 {
-                    meshDetails ??= new List<string>();
                     var bounds = renderer.bounds.size;
                     meshDetails.Add($"{DescribeRelative(root.transform, renderer.transform)} enabled={renderer.enabled} active={renderer.gameObject.activeInHierarchy} forceOff={renderer.forceRenderingOff} layer={renderer.gameObject.layer} bounds=({bounds.x:F2},{bounds.y:F2},{bounds.z:F2})");
                 }
@@ -797,7 +807,7 @@ namespace Megabonk.Multiplayer
                     playerRenderer.gameObject.SetActive(true);
             }
 
-            if (MultiplayerPlugin.LogS != null)
+            if (shouldLog)
             {
                 var note = disabledNotes != null && disabledNotes.Count > 0
                     ? $" issues=[{string.Join("; ", disabledNotes)}]"
@@ -836,6 +846,8 @@ namespace Megabonk.Multiplayer
                     return false;
                 }
 
+                ApplyRendererDefaults(characterData.eCharacter, playerRenderer, $"SkinRegistry.Remote[{peerId}]");
+
                 using (RemoteStatScope.Enter())
                 {
                     var inventory = new PlayerInventory(characterData, true);
@@ -853,6 +865,11 @@ namespace Megabonk.Multiplayer
                 EnableRenderStack(rendererContainer);
                 RemovePhysicsComponents(root.transform);
 
+                int remoteLayer = LayerMask.NameToLayer("Default");
+                if (remoteLayer < 0)
+                    remoteLayer = 0;
+                SetLayerRecursively(root.transform, remoteLayer);
+
                 try
                 {
                     if (skin != null)
@@ -865,24 +882,32 @@ namespace Megabonk.Multiplayer
                     MultiplayerPlugin.LogS?.LogDebug($"[SkinRegistry] Template capture during renderer path failed: {templateEx.Message}");
                 }
 
+                var remote = root.GetComponent<RemoteAvatar>() ?? root.AddComponent<RemoteAvatar>();
+                remote.BindRenderer(playerRenderer, $"SkinRegistry.Remote[{peerId}]");
+
                 avatarRoot = root;
                 renderer = playerRenderer;
                 MultiplayerPlugin.LogS?.LogInfo($"[SkinRegistry] Spawned PlayerRenderer avatar for {character}/{skinName}");
                 return true;
             }
+            catch (MissingMethodException mmex)
+            {
+                _playerRendererPathAvailable = false;
+                MultiplayerPlugin.LogS?.LogWarning($"[SkinRegistry] PlayerRenderer path disabled (missing API): {mmex.Message}");
+            }
             catch (Exception ex)
             {
-                if (rendererContainer != null)
-                    UnityEngine.Object.Destroy(rendererContainer);
-
-                if (root != null)
-                    UnityEngine.Object.Destroy(root);
-
                 MultiplayerPlugin.LogS?.LogDebug($"[SkinRegistry] PlayerRenderer path failed for {character}/{skinName}: {ex.Message}");
-                avatarRoot = null;
-                renderer = null;
-                return false;
             }
+            if (rendererContainer != null)
+                UnityEngine.Object.Destroy(rendererContainer);
+
+            if (root != null)
+                UnityEngine.Object.Destroy(root);
+
+            avatarRoot = null;
+            renderer = null;
+            return false;
         }
 
         private static string DescribeRelative(Transform root, Transform target)
@@ -910,6 +935,91 @@ namespace Megabonk.Multiplayer
                 list.Insert(0, "<root?>");
 
             return string.Join("/", list);
+        }
+
+        private static void SetLayerRecursively(Transform root, int layer)
+        {
+            if (!root)
+                return;
+
+            root.gameObject.layer = layer;
+            for (int i = 0; i < root.childCount; i++)
+            {
+                var child = root.GetChild(i);
+                if (child != null)
+                    SetLayerRecursively(child, layer);
+            }
+        }
+
+        private static void CaptureRendererDefaults(ECharacter character, GameObject templateRoot)
+        {
+            if (_rendererDefaults.ContainsKey(character) || !templateRoot)
+                return;
+
+            try
+            {
+                var templateRenderer = Il2CppComponentUtil.GetComponentInChildrenCompat<PlayerRenderer>(templateRoot.transform, true);
+                if (templateRenderer == null)
+                    return;
+
+                var defaults = new RendererDefaults(
+                    templateRenderer.damageFlash,
+                    templateRenderer.shieldColor,
+                    templateRenderer.colorFreeze,
+                    templateRenderer.colorMud,
+                    templateRenderer.poisonColor,
+                    templateRenderer.colorNothing);
+
+                _rendererDefaults[character] = defaults;
+            }
+            catch (Exception ex)
+            {
+                MultiplayerPlugin.LogS?.LogDebug($"[SkinRegistry] Failed to capture renderer defaults for {character}: {ex.Message}");
+            }
+        }
+
+        private static void ApplyRendererDefaults(ECharacter character, PlayerRenderer renderer, string context)
+        {
+            if (renderer == null)
+                return;
+
+            if (!_rendererDefaults.TryGetValue(character, out var defaults))
+                return;
+
+            try
+            {
+                if (defaults.DamageFlash != null)
+                    renderer.damageFlash = defaults.DamageFlash;
+                renderer.shieldColor = defaults.ShieldColor;
+                renderer.colorFreeze = defaults.ColorFreeze;
+                renderer.colorMud = defaults.ColorMud;
+                renderer.poisonColor = defaults.PoisonColor;
+                renderer.colorNothing = defaults.ColorNothing;
+            }
+            catch (Exception ex)
+            {
+                MultiplayerPlugin.LogS?.LogDebug($"[SkinRegistry] Failed to apply renderer defaults for {character} ({context}): {ex.Message}");
+            }
+        }
+
+        private readonly struct RendererDefaults
+        {
+            public readonly Material DamageFlash;
+            public readonly Color ShieldColor;
+            public readonly Color ColorFreeze;
+            public readonly Color ColorMud;
+            public readonly Color PoisonColor;
+            public readonly Color ColorNothing;
+
+            public RendererDefaults(Material damageFlash, Color shieldColor, Color colorFreeze, Color colorMud, Color poisonColor, Color colorNothing)
+            {
+                DamageFlash = damageFlash;
+                ShieldColor = shieldColor;
+                ColorFreeze = colorFreeze;
+                ColorMud = colorMud;
+                PoisonColor = poisonColor;
+                ColorNothing = colorNothing;
+            }
         }
 
     }

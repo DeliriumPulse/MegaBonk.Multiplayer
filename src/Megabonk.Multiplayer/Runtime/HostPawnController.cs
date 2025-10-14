@@ -16,6 +16,7 @@ namespace Megabonk.Multiplayer
         private const float REFRESH_EVERY = 2f;
         private string _lastAppearancePayload;
         private static HostPawnController _active;
+        private bool _hasLocalVisual;
 
         private void Start()
         {
@@ -46,6 +47,7 @@ namespace Megabonk.Multiplayer
             _refreshTimer = 0f;
             _txTimer = 0f;
             _lastAppearancePayload = null;
+            _hasLocalVisual = false;
             ResolveSource("character");
         }
 
@@ -96,6 +98,12 @@ namespace Megabonk.Multiplayer
             if (TryResolveFromMyPlayer(phase))
                 return;
 
+            if (!_hasLocalVisual)
+            {
+                MultiplayerPlugin.LogS?.LogDebug($"[HostPawn] {phase}: waiting for local player model, skipping shared locator.");
+                return;
+            }
+
             var resolved = PlayerModelLocator.Find(transform, $"HostPawn.{phase}", allowFallback: false);
             if (resolved != null)
             {
@@ -114,6 +122,9 @@ namespace Megabonk.Multiplayer
         private void TryRefreshSource()
         {
             if (TryResolveFromMyPlayer("refresh"))
+                return;
+
+            if (!_hasLocalVisual)
                 return;
 
             var refreshed = PlayerModelLocator.Find(_source, "HostPawn.refresh", allowFallback: false);
@@ -168,6 +179,8 @@ namespace Megabonk.Multiplayer
                 PlayerModelLocator.RegisterKnownVisual(transform, _source, $"HostPawn.{phase}.MyPlayer");
                 PlayerModelLocator.RegisterKnownVisual(playerRenderer.transform, _source, $"HostPawn.{phase}.MyPlayerRenderer");
                 SkinPrefabRegistry.RegisterCharacterData(playerRenderer.characterData);
+                AnimatorSyncSource.Ensure(_core, playerRenderer, $"HostPawn.{phase}");
+                _hasLocalVisual = true;
 
                 MultiplayerPlugin.LogS?.LogInfo($"[HostPawn] {phase} (MyPlayer) -> {PlayerModelLocator.Describe(_source)}");
                 BroadcastAppearance();
