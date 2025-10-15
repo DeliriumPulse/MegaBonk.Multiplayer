@@ -1,16 +1,16 @@
 # Megabonk Multiplayer Mod
 
-Welcome to my first mod project! **Megabonk Multiplayer** is a BepInEx plug-in that brings online co‑op to Megabonk with deterministic map generation, full character replication, and a pluggable transport layer. The codebase is built around Harmony patches, remote avatar shims, and a slim networking core so we can iterate quickly without touching the base game binaries.
+Megabonk Multiplayer is a BepInEx plug-in that brings deterministic online co-op to Megabonk. Harmony patches, remote avatar shims, and a lean networking core let us layer multiplayer on top of the IL2CPP build without touching the base game binaries.
 
 ---
 
 ## Highlights
 
-- **Synchronized worlds** – RNG hooks keep procedural tiles, seeds, and Unity random state identical for every peer from the title screen to end‑game.
-- **Remote avatars that behave** – Player skins, materials, animators, and transforms are mirrored over the network, with damage flash guards that stop remote models from getting stuck in debug magenta.
-- **Network abstraction** – LiteNetLib transport is in-tree today, with a Steamworks transport shim ready to slot in. The `NetDriverCore` handles peers, message fan-out, and handshakes irrespective of transport.
-- **Appearance pipeline** – `SkinPrefabRegistry` and `PlayerModelLocator` reconstruct character prefabs on remote machines, ensuring abilities stay local-only while visuals stay in sync.
-- **Patch suite** – Harmony patches harden everything from scene loading to RNG seeding, letting us layer multiplayer safely on top of Megabonk’s IL2CPP build.
+- **Synchronized worlds** – RNG hooks keep procedural tiles, seeds, and Unity random state identical for every peer from the title screen to end-game.
+- **Remote avatars that behave** – Player skins, materials, animators, and transforms replicate over the network, with damage flash guards that stop remote models from getting stuck in debug magenta.
+- **Network abstraction** – LiteNetLib transport is in-tree today, with a Steamworks transport shim ready to slot in. `NetDriverCore` handles peers, message fan-out, and handshakes irrespective of transport.
+- **Appearance pipeline** – `SkinPrefabRegistry` and `PlayerModelLocator` reconstruct character prefabs on remote machines, keeping abilities local while visuals stay in sync.
+- **Patch suite** – Harmony patches harden everything from scene loading to RNG seeding, letting us iterate quickly while the base game keeps evolving.
 
 ---
 
@@ -26,15 +26,15 @@ Welcome to my first mod project! **Megabonk Multiplayer** is a BepInEx plug-in t
 
 1. Clone or download this repository.
 2. Run `dotnet build -c Release` from the repo root.
-3. Copy the generated `Megabonk.Multiplayer.dll` from `src/Megabonk.Multiplayer/bin/Release/net6.0/net6.0/` to each player’s `Megabonk/BepInEx/plugins/` folder.
+3. Copy `src/Megabonk.Multiplayer/bin/Release/net6.0/net6.0/Megabonk.Multiplayer.dll` to each player's `Megabonk/BepInEx/plugins/` folder.
 4. Launch Megabonk with BepInEx. The log will show `[Megabonk Multiplayer]` entries once the mod loads.
 
-> Tip: keep both host and client DLLs identical to avoid desyncs. The build timestamp is logged at startup for easy comparison.
+> **Tip:** keep host and client DLLs identical to avoid desyncs. The build timestamp is logged at startup for easy comparison.
 
 ### Hosting & Joining
 
-1. Start the game on the machine that will host and choose “Host” in the mod’s configuration (BepInEx config or in-game UI, once available).
-2. Launch the second instance with the config set to “Client”, pointing to the host’s IP/SteamID.
+1. Start the game on the machine that will host and choose “Host” in the mod configuration (BepInEx config or an in-game UI once available).
+2. Launch the second instance with the config set to “Client”, pointing to the host's IP/SteamID.
 3. Watch `BepInEx/LogOutput.log` for `[NetDriverCore]` messages that confirm the handshake and appearance sync.
 
 ---
@@ -43,44 +43,43 @@ Welcome to my first mod project! **Megabonk Multiplayer** is a BepInEx plug-in t
 
 ```
 src/Megabonk.Multiplayer/
-├── Core/                  # Entrypoint plug-in & bootstrap logic
+├── Core/                  # Entrypoint plugin & bootstrap logic
 ├── Runtime/               # Player-facing behaviours (avatars, skins, anim sync, etc.)
 ├── Networking/            # Transports, drivers, and message plumbing
-├── Patches/               # Harmony patches (subfolders for RNG, map generation, player, UI, system)
+├── Patches/               # Harmony patches (Rng, Player, Map, UI, System)
 ├── Utility/               # Shared helpers (IL2CPP reflection, type dumps)
 ├── External/              # Bundled third-party libraries required at build time
-├── Megabonk.Multiplayer.csproj
-└── README.md
+└── Megabonk.Multiplayer.csproj
 ```
 
-Supporting scripts (Ghidra exporters, logs) live outside `src/` and are intentionally ignored to prevent noise in the repo.
+Supporting scripts (Ghidra exporters, logs) live outside `src/` and are intentionally ignored to keep the repo tidy.
 
 ---
 
 ## Building From Source
 
 ```powershell
-dotnet build          # Debug build
-dotnet build -c Release
+dotnet build             # Debug build
+dotnet build -c Release  # Release build
 ```
 
 Artifacts land in `src/Megabonk.Multiplayer/bin/<Configuration>/net6.0/net6.0/`. Only the DLL needs to be distributed; all other files are build intermediates.
 
-### Running Tests or Validation
+### Validation Tips
 
-- **Manual smoke test**: Launch a host and a client locally, hit each other once, and confirm `[DamageGuard]` logs show remotes skipping the magenta flash.
-- **Sync validation**: Use `typelist.txt` exports and RNG trace patches to confirm both peers stay deterministic across map loads.
+- **Manual smoke test:** Launch a host and a client locally, land a hit, and confirm `[DamageGuard]` logs show remotes skipping the magenta flash.
+- **Sync validation:** Use `typelist.txt` exports and `[JOBRNG]` trace patches to confirm both peers stay deterministic across map loads.
 
 ---
 
 ## Troubleshooting
 
-| Symptom | What to Check |
+| Symptom | What to check |
 | --- | --- |
-| Remote player turns magenta | Ensure both peers are running the same build. Look for `[DamageGuard]` logs; if absent, verify `Patch_PlayerRenderer` is applied (check the BepInEx log at startup). |
-| Characters spawn with wrong abilities | Confirm `RemoteStatScope` entries appear when skins initialize. If not, restart both clients to clear residue singleton state. |
+| Remote player turns magenta | Ensure both peers are running the same build. Check for `[DamageGuard]` logs; if absent, verify `Patch_PlayerRenderer` is applied. |
+| Characters spawn with wrong abilities | Confirm `RemoteStatScope` entries appear when skins initialize. If not, restart both clients to clear residual singleton state. |
 | Network connect fails | Review `[LiteNetTransport]` or `[SteamP2PTransport]` warnings. Firewalls often block UDP 28960 (default). |
-| Map layouts diverge | Make sure both players joined before map generation started. RNG guard patches must initialize prior to scene load; restart the session if they didn’t. |
+| Map layouts diverge | Make sure both players joined before map generation started. RNG patches must initialize prior to scene load; restart the session if they didn’t. |
 
 When in doubt, attach `BepInEx/LogOutput.log` snippets to bug reports—Harmony patches log every key decision with context tags like `[LocatorRegister]` and `[RemoteAvatar]`.
 
@@ -88,14 +87,25 @@ When in doubt, attach `BepInEx/LogOutput.log` snippets to bug reports—Harmony 
 
 ## Roadmap
 
-- ✅ Deterministic terrain/interactable seeding: RNG patches now cover shrines, rails, landscape passes, etc.
-- 🔄 Align remaining RNG consumers (PlayerRenderer / ruin & pillar placement) so structures match 1:1 across peers.
-- Steam transport polish with NAT punch-through helpers.
-- UI surface for quick role switching and IP entry.
-- Snapshot compression for lower bandwidth usage.
-- Dedicated co-op lobby flow (persisting appearance selections across sessions).
+### ✅ Recently Landed
+- Deterministic terrain/interactable seeding: shrines, rails, rocks, trees, and landscape passes now match across peers.
+- `Patch_DumpAndForceJobRNGs` expanded to every RNG-heavy managed entry point (projectiles, abilities, item procs, PlayerRenderer, etc.).
+- Legacy RNG guards removed; all reseeding now flows through scoped Harmony prefixes and `UnityRandomScope`.
 
-Have ideas? Open an issue or reach out—feedback is especially welcome while this first mod project is taking shape.
+### 🛠 In Progress
+- Align remaining RNG consumers (especially `PlayerRenderer.Update`) so ruin/pillar structures, loot rolls, and late-spawn props stay deterministic.
+- Add targeted logging for chest/loot pipelines and confirm host/client seeding covers every InteractableChest variant.
+- Automate “first divergence” diffing between host/client logs to speed up multiplayer debugging.
+
+### 🎯 Next Milestones
+- Steam transport polish with NAT punch-through helpers and automatic peer discovery.
+- In-game multiplayer UX: role switching, IP/host entry, join codes, ready checks, and status indicators.
+- Snapshot compression & delta sync to lower bandwidth and reduce stutter on busy maps.
+- Dedicated co-op lobby flow that persists appearance/skin selections between sessions.
+- Replay/spectator-safe architecture so observers can join after the map is seeded.
+- Save-state reconciliation hooks (stats, unlocks) to keep campaign progression aligned across machines.
+- Host migration and reconnect support so clients can rejoin an in-progress run without restarting the map.
+- Modding surface for community events (shared challenges, weekly seeds, seasonal modifiers).
 
 ---
 
