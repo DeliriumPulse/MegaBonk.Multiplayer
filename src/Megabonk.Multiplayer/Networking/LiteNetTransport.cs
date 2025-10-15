@@ -151,7 +151,8 @@ namespace Megabonk.Multiplayer.Transport
 			if (_idToPeer.TryGetValue(0, out var hostPeer))
 			{
 				hostPeer.Send(writer, reliable ? DeliveryMethod.ReliableOrdered : DeliveryMethod.Unreliable);
-				Megabonk.Multiplayer.MultiplayerPlugin.LogS?.LogDebug("[LiteNetTransport] Sent message to host.");
+				if (Megabonk.Multiplayer.MultiplayerPlugin.VerboseNetwork)
+					Megabonk.Multiplayer.MultiplayerPlugin.LogS?.LogDebug("[LiteNetTransport] Sent message to host.");
 			}
 		}
 
@@ -233,8 +234,11 @@ namespace Megabonk.Multiplayer.Transport
 
 			bool reliable = deliveryMethod != DeliveryMethod.Unreliable && deliveryMethod != DeliveryMethod.Sequenced;
 
-			Megabonk.Multiplayer.MultiplayerPlugin.LogS?.LogDebug(
-				$"[LiteNetTransport] Packet received from {peer.EndPoint}, bytes={len}, firstByte={(len>0?tmp[0]:255):X2}, mappedId={id}");
+			if (Megabonk.Multiplayer.MultiplayerPlugin.VerboseNetwork)
+			{
+				Megabonk.Multiplayer.MultiplayerPlugin.LogS?.LogDebug(
+					$"[LiteNetTransport] Packet received from {peer.EndPoint}, bytes={len}, firstByte={(len > 0 ? tmp[0] : 255):X2}, mappedId={id}, reliable={reliable}");
+			}
 
 			if (id == 0 && IsServer)
 			{
@@ -270,8 +274,12 @@ namespace Megabonk.Multiplayer.Transport
 				}
 			}
 
-			Megabonk.Multiplayer.MultiplayerPlugin.LogS?.LogDebug(
-				$"[LiteNetTransport] SendToAll → {data.Length} bytes, reliable={reliable}");
+			if (Megabonk.Multiplayer.MultiplayerPlugin.VerboseNetwork)
+			{
+				Megabonk.Multiplayer.MultiplayerPlugin.LogS?.LogDebug(
+					$"[LiteNetTransport] SendToAll -> {data.Length} bytes, reliable={reliable}");
+			}
+
 		}
 
 
@@ -291,8 +299,12 @@ namespace Megabonk.Multiplayer.Transport
 			try
 			{
 				peer.Send(data, 0, data.Length, method);       // explicit offset + length
-				Megabonk.Multiplayer.MultiplayerPlugin.LogS?.LogDebug(
-					$"[LiteNetTransport] Sent {data.Length} bytes to {peer.EndPoint}");
+
+				if (Megabonk.Multiplayer.MultiplayerPlugin.VerboseNetwork)
+				{
+					Megabonk.Multiplayer.MultiplayerPlugin.LogS?.LogDebug(
+						$"[LiteNetTransport] Sent {data.Length} bytes to {peer.EndPoint}, reliable={reliable}");
+				}
 			}
 			catch (Exception e)
 			{

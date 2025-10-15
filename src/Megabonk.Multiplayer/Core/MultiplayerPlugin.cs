@@ -34,7 +34,11 @@ namespace Megabonk.Multiplayer
         private BepInEx.Configuration.ConfigEntry<string> _transport;
         private BepInEx.Configuration.ConfigEntry<string> _hostSteamId;
         private BepInEx.Configuration.ConfigEntry<bool> _enableRngSync;
+        private BepInEx.Configuration.ConfigEntry<bool> _verboseNetwork;
+        private BepInEx.Configuration.ConfigEntry<bool> _verboseJobRng;
         internal static bool EnableRngSync { get; private set; } = true;
+        internal static bool VerboseNetwork { get; private set; } = false;
+        internal static bool VerboseJobRng { get; private set; } = false;
         public static int CoopSeed = int.MinValue;
 
         public override void Load()
@@ -49,7 +53,17 @@ namespace Megabonk.Multiplayer
             _transport = Config.Bind("Multiplayer", "Transport", "lite", "Transport: 'lite' or 'steam'");
             _hostSteamId = Config.Bind("Multiplayer", "HostSteamId", "0", "64-bit SteamID of host");
             _enableRngSync = Config.Bind("Multiplayer", "EnableRngSync", true, "Enable RNG synchronization patches.");
+            _verboseNetwork = Config.Bind("Debug", "VerboseNetworkPackets", false, "Log every transport packet and payload summary.");
+            _verboseJobRng = Config.Bind("Debug", "VerboseJobRng", true, "Log every job RNG hook/prefix invocation.");
             EnableRngSync = _enableRngSync.Value;
+            VerboseNetwork = _verboseNetwork.Value;
+            // force-enable detailed job RNG logging so we capture traces without manual config edits
+            if (!_verboseJobRng.Value)
+                _verboseJobRng.Value = true;
+            VerboseJobRng = _verboseJobRng.Value;
+
+            _verboseNetwork.SettingChanged += (_, __) => VerboseNetwork = _verboseNetwork.Value;
+            _verboseJobRng.SettingChanged += (_, __) => VerboseJobRng = _verboseJobRng.Value;
 
             // Register IL2CPP types for BepInEx
             NetDriverShim.EnsureRegistered();
@@ -126,13 +140,9 @@ namespace Megabonk.Multiplayer
                     {
                         SafePatch(typeof(Patch_MapGeneratorTrace));
                         SafePatch(typeof(Patch_UnityRandomSeed));
-                        SafePatch(typeof(Patch_UnityRandomInitOverride));
                         SafePatch(typeof(Patch_AllUnityRandomInit));
+                        SafePatch(typeof(Patch_UnityRandomRangeLogger));
                         SafePatch(typeof(Patch_UnityRandomStateSetter));
-                        SafePatch(typeof(Patch_SeedBeforeGeneration));
-                        SafePatch(typeof(Patch_MapGeneratorForceSeed));
-                        SafePatch(typeof(Patch_RNGGuard));
-                        SafePatch(typeof(Patch_RNGCoroutineGuard));
                         SafePatch(typeof(Patch_UnityMathRandomTrace));
                         SafePatch(typeof(Patch_UnityMathematicsSeed_Constructors));
                         SafePatch(typeof(Patch_UnityMathematicsSeed_Init));
@@ -220,7 +230,7 @@ namespace Megabonk.Multiplayer
                                 target.ContainsGenericParameters)
                                 continue;
 
-                            try { harmonyJob.Patch(target, prefix: new HarmonyMethod(prefix)); }
+                            try { harmonyJob.Patch(target, prefix: prefix != null ? new HarmonyMethod(prefix) : null); }
                             catch (Exception e)
                             {
                                 LogS.LogWarning($"[JOBRNG] Skipped {target?.DeclaringType?.FullName}.{target?.Name}: {e.Message}");

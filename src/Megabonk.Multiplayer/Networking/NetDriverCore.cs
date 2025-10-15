@@ -413,7 +413,8 @@ namespace Megabonk.Multiplayer
                         break;
                 }
 
-                MultiplayerPlugin.LogS.LogInfo($"[NetDriverCore] Received data from {peerId}, bytes={data.Count}");
+                if (MultiplayerPlugin.VerboseNetwork)
+                    MultiplayerPlugin.LogS.LogDebug($"[NetDriverCore] Received data from {peerId}, bytes={data.Count}, reliable={reliable}");
             }
             catch (Exception e)
             {

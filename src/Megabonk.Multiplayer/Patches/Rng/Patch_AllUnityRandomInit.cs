@@ -8,6 +8,8 @@ namespace Megabonk.Multiplayer
     [HarmonyPatch]
     public static class Patch_AllUnityRandomInit
     {
+        internal static bool SuppressOverride;
+
         [HarmonyTargetMethods]
         public static IEnumerable<MethodBase> TargetMethods()
         {
@@ -21,6 +23,12 @@ namespace Megabonk.Multiplayer
         [HarmonyPrefix]
         public static void Prefix(ref int seed)
         {
+            if (SuppressOverride)
+            {
+                SuppressOverride = false;
+                return;
+            }
+
             int coopSeed = NetDriverCore.GlobalSeed != 0 ? NetDriverCore.GlobalSeed : seed;
 
             if (coopSeed != seed)

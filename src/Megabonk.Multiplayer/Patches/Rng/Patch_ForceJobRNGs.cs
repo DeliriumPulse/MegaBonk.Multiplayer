@@ -2,7 +2,9 @@
 using HarmonyLib;
 using System;
 using System.Collections;
+using System.Collections.Generic;
 using System.Reflection;
+using System.Text;
 
 namespace Megabonk.Multiplayer
 {
@@ -13,9 +15,7 @@ namespace Megabonk.Multiplayer
             if (obj == null)
                 return;
 
-            int seed = CoopSeedStorage.Value != int.MinValue
-                ? CoopSeedStorage.Value
-                : NetDriverCore.GlobalSeed;
+            int seed = ResolveSeed();
 
             if (seed == int.MinValue)
                 return;
@@ -25,6 +25,84 @@ namespace Megabonk.Multiplayer
 
             if (changed > 0)
                 MultiplayerPlugin.LogS.LogInfo($"[JOBRNG] Seeded {changed} random fields on {obj.GetType().FullName}");
+        }
+
+        public static void ApplyToStatic(Type type)
+        {
+            if (type == null)
+                return;
+
+            int seed = ResolveSeed();
+            if (seed == int.MinValue)
+                return;
+
+            int changed = 0;
+            ForceRandomsInType(type, (uint)seed, ref changed);
+
+            if (changed > 0)
+                MultiplayerPlugin.LogS.LogInfo($"[JOBRNG] Seeded {changed} static random fields on {type.FullName}");
+        }
+
+        internal static int GetActiveSeed() => ResolveSeed();
+
+        internal static int DeriveMethodSeed(int baseSeed, MethodBase method, int callIndex)
+        {
+            unchecked
+            {
+                int hash = baseSeed;
+                if (method != null)
+                {
+                    int methodHash = GetStableMethodHash(method);
+                    hash = (hash * 397) ^ methodHash;
+                }
+                hash = (hash * 397) ^ callIndex;
+                if (hash == int.MinValue)
+                    hash += 1;
+                if (hash == 0)
+                    hash = baseSeed ^ 0x5bd1e995 ^ callIndex;
+                return hash;
+            }
+        }
+
+        private static int GetStableMethodHash(MethodBase method)
+        {
+            var builder = new StringBuilder();
+            builder.Append(method.DeclaringType?.FullName ?? "<global>");
+            builder.Append("::");
+            builder.Append(method.Name ?? "<null>");
+            builder.Append('(');
+
+            var parameters = method.GetParameters();
+            for (int i = 0; i < parameters.Length; i++)
+            {
+                if (i > 0)
+                    builder.Append(',');
+                builder.Append(parameters[i].ParameterType?.FullName ?? "<null>");
+            }
+
+            builder.Append(')');
+
+            unchecked
+            {
+                uint hash = 2166136261;
+                for (int i = 0; i < builder.Length; i++)
+                {
+                    hash ^= builder[i];
+                    hash *= 16777619;
+                }
+                // ensure consistent non-zero result
+                if (hash == 0)
+                    hash = 0x811C9DC5;
+                return (int)hash;
+            }
+        }
+
+        private static int ResolveSeed()
+        {
+            if (CoopSeedStorage.Value != int.MinValue)
+                return CoopSeedStorage.Value;
+
+            return NetDriverCore.GlobalSeed;
         }
 
         private static void ForceRandoms(object obj, uint seed, ref int changed, int depth = 0, int maxDepth = 3)
@@ -126,6 +204,106 @@ namespace Megabonk.Multiplayer
 
                 ForceRandoms(element, seed, ref changed, depth + 1, maxDepth);
                 list[i] = element;
+            }
+        }
+
+        private static void ForceRandomsInType(Type type, uint seed, ref int changed, int depth = 0, int maxDepth = 3)
+        {
+            if (type == null || depth > maxDepth)
+                return;
+
+            var visited = new HashSet<Type>();
+            ForceRandomsInTypeRecursive(type, seed, ref changed, depth, maxDepth, visited);
+        }
+
+        private static void ForceRandomsInTypeRecursive(Type type, uint seed, ref int changed, int depth, int maxDepth, HashSet<Type> visited)
+        {
+            if (type == null || depth > maxDepth)
+                return;
+
+            if (type.ContainsGenericParameters)
+                return;
+
+            if (!visited.Add(type))
+                return;
+
+            const BindingFlags fieldFlags = BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.FlattenHierarchy;
+
+            foreach (var field in type.GetFields(fieldFlags))
+            {
+                if (!field.IsStatic || field.IsLiteral || field.IsInitOnly)
+                    continue;
+
+                if (field.FieldType.ContainsGenericParameters)
+                    continue;
+
+                object value;
+                try
+                {
+                    value = field.GetValue(null);
+                }
+                catch (Exception e)
+                {
+                    MultiplayerPlugin.LogS.LogDebug($"[JOBRNG] Failed to read static {type.FullName}.{field.Name}: {e.Message}");
+                    continue;
+                }
+
+                if (value == null)
+                    continue;
+
+                try
+                {
+                    var workingValue = value;
+
+                    if (TryForceRandomLike(ref workingValue, seed, ref changed))
+                    {
+                        field.SetValue(null, workingValue);
+                        continue;
+                    }
+
+                    if (workingValue is Array array && field.FieldType.IsArray)
+                    {
+                        ForceArrayRandoms(array, seed, ref changed, depth, maxDepth);
+                        field.SetValue(null, array);
+                        continue;
+                    }
+
+                    if (workingValue is IList list && workingValue is not string)
+                    {
+                        ForceListRandoms(list, seed, ref changed, depth, maxDepth);
+                        field.SetValue(null, list);
+                        continue;
+                    }
+
+                    ForceRandoms(workingValue, seed, ref changed, depth + 1, maxDepth);
+
+                    if (field.FieldType.IsValueType)
+                        field.SetValue(null, workingValue);
+                }
+                catch (Exception e)
+                {
+                    MultiplayerPlugin.LogS.LogDebug($"[JOBRNG] Error processing static {type.FullName}.{field.Name}: {e.Message}");
+                }
+            }
+
+            if (depth >= maxDepth)
+                return;
+
+            var baseType = type.BaseType;
+            if (baseType != null
+                && baseType != typeof(object)
+                && baseType != typeof(ValueType)
+                && baseType.Assembly == type.Assembly)
+            {
+                ForceRandomsInTypeRecursive(baseType, seed, ref changed, depth + 1, maxDepth, visited);
+            }
+
+            foreach (var nested in type.GetNestedTypes(BindingFlags.Public | BindingFlags.NonPublic))
+            {
+                if (nested.ContainsGenericParameters)
+                    continue;
+
+                ForceRandomsInTypeRecursive(nested, seed, ref changed, depth + 1, maxDepth, visited);
             }
         }
 
