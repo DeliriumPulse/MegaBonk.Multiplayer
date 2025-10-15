@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Security.Cryptography;
 using Assets.Scripts._Data;
 using Assets.Scripts.Actors.Player;
 using LiteNetLib;
@@ -898,7 +899,7 @@ namespace Megabonk.Multiplayer
 
             var writer = new NetDataWriter();
             writer.Put((byte)0x03);
-            int seed = UnityEngine.Random.Range(int.MinValue, int.MaxValue);
+            int seed = System.Security.Cryptography.RandomNumberGenerator.GetInt32(int.MinValue, int.MaxValue);
             writer.Put(seed);
             writer.Put(scene);
 
