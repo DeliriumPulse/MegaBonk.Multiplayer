@@ -1,16 +1,16 @@
 # Megabonk Multiplayer Mod
 
-Megabonk Multiplayer is a BepInEx plug-in that brings deterministic online co-op to Megabonk. Harmony patches, remote avatar shims, and a lean networking core let us layer multiplayer on top of the IL2CPP build without touching the base game binaries.
+Megabonk Multiplayer is a BepInEx plug-in that layers deterministic online co-op on top of Megabonk. Harmony patches drive the game-side hooks, while a slim networking core (LiteNetLib today, Steamworks tomorrow) keeps peers in sync without touching the base IL2CPP binaries.
 
 ---
 
 ## Highlights
 
-- **Synchronized worlds** – RNG hooks keep procedural tiles, seeds, and Unity random state identical for every peer from the title screen to end-game.
-- **Remote avatars that behave** – Player skins, materials, animators, and transforms replicate over the network, with damage flash guards that stop remote models from getting stuck in debug magenta.
-- **Network abstraction** – LiteNetLib transport is in-tree today, with a Steamworks transport shim ready to slot in. `NetDriverCore` handles peers, message fan-out, and handshakes irrespective of transport.
-- **Appearance pipeline** – `SkinPrefabRegistry` and `PlayerModelLocator` reconstruct character prefabs on remote machines, keeping abilities local while visuals stay in sync.
-- **Patch suite** – Harmony patches harden everything from scene loading to RNG seeding, letting us iterate quickly while the base game keeps evolving.
+- **Synchronized worlds** – RNG hooks keep procedural tiles, seeds, and Unity random state identical for every peer from title screen to end-game.
+- **Remote avatars that behave** – Skins, materials, animators, and transforms replicate over the network, with damage-flash guards so remote models never freeze in debug magenta.
+- **Pluggable transport** – `NetDriverCore` abstracts peer management; LiteNetLib ships in-tree and a Steamworks shim can slot in without code churn.
+- **Prefab reconstruction** – `SkinPrefabRegistry` and `PlayerModelLocator` rebuild character models on remote machines so gameplay stays authoritative but visuals line up.
+- **Patch suite** – Harmony patches harden scene loading, RNG seeding, UI shims, and player systems so multiplayer rides on top of the existing game safely.
 
 ---
 
@@ -19,7 +19,7 @@ Megabonk Multiplayer is a BepInEx plug-in that brings deterministic online co-op
 ### Prerequisites
 
 - Megabonk (latest retail build)
-- BepInEx 6 (IL2CPP edition) installed in the game directory
+- BepInEx 6 IL2CPP edition installed in the game directory
 - .NET 6 SDK for building from source
 
 ### Quick Install
@@ -27,15 +27,15 @@ Megabonk Multiplayer is a BepInEx plug-in that brings deterministic online co-op
 1. Clone or download this repository.
 2. Run `dotnet build -c Release` from the repo root.
 3. Copy `src/Megabonk.Multiplayer/bin/Release/net6.0/net6.0/Megabonk.Multiplayer.dll` to each player's `Megabonk/BepInEx/plugins/` folder.
-4. Launch Megabonk with BepInEx. The log will show `[Megabonk Multiplayer]` entries once the mod loads.
+4. Launch Megabonk with BepInEx. Look for `[Megabonk Multiplayer]` in `BepInEx/LogOutput.log` to confirm the plug-in loaded.
 
-> **Tip:** keep host and client DLLs identical to avoid desyncs. The build timestamp is logged at startup for easy comparison.
+> **Tip:** keep host and client DLLs identical to avoid desyncs. The build timestamp is printed at startup for easy comparison.
 
 ### Hosting & Joining
 
-1. Start the game on the machine that will host and choose “Host” in the mod configuration (BepInEx config or an in-game UI once available).
-2. Launch the second instance with the config set to “Client”, pointing to the host's IP/SteamID.
-3. Watch `BepInEx/LogOutput.log` for `[NetDriverCore]` messages that confirm the handshake and appearance sync.
+1. On the host machine, set the config entry `Multiplayer.Role=Host` (via `BepInEx/config/vettr.megabonk.multiplayer.cfg` or the upcoming in-game UI) and start the game.
+2. On each client, set `Multiplayer.Role=Client` and point `HostAddress` (or `HostSteamId` once Steam transport lands) at the host.
+3. Watch the log for `[NetDriverCore]` messages confirming the handshake and appearance sync.
 
 ---
 
@@ -43,16 +43,16 @@ Megabonk Multiplayer is a BepInEx plug-in that brings deterministic online co-op
 
 ```
 src/Megabonk.Multiplayer/
-├── Core/                  # Entrypoint plugin & bootstrap logic
-├── Runtime/               # Player-facing behaviours (avatars, skins, anim sync, etc.)
-├── Networking/            # Transports, drivers, and message plumbing
-├── Patches/               # Harmony patches (Rng, Player, Map, UI, System)
-├── Utility/               # Shared helpers (IL2CPP reflection, type dumps)
-├── External/              # Bundled third-party libraries required at build time
+├── Core/                  # Entrypoint plug-in & bootstrap logic
+├── Networking/            # Transports, driver, wire protocol helpers
+├── Runtime/               # Player-facing behaviours (avatars, stats, FX)
+├── Patches/               # Harmony patch families (Rng, Player, Map, UI, System)
+├── Utility/               # Shared IL2CPP helpers, type dumps, logging
+├── External/              # Third-party libs referenced at build time
 └── Megabonk.Multiplayer.csproj
 ```
 
-Supporting scripts (Ghidra exporters, logs) live outside `src/` and are intentionally ignored to keep the repo tidy.
+Auxiliary tooling (Ghidra exports, log scrapers) lives outside `src/` and is intentionally ignored to keep the repo tidy.
 
 ---
 
@@ -63,12 +63,12 @@ dotnet build             # Debug build
 dotnet build -c Release  # Release build
 ```
 
-Artifacts land in `src/Megabonk.Multiplayer/bin/<Configuration>/net6.0/net6.0/`. Only the DLL needs to be distributed; all other files are build intermediates.
+Artifacts land in `src/Megabonk.Multiplayer/bin/<Configuration>/net6.0/net6.0/`. Only the DLL needs to be distributed.
 
 ### Validation Tips
 
-- **Manual smoke test:** Launch a host and a client locally, land a hit, and confirm `[DamageGuard]` logs show remotes skipping the magenta flash.
-- **Sync validation:** Use `typelist.txt` exports and `[JOBRNG]` trace patches to confirm both peers stay deterministic across map loads.
+- **Manual smoke test:** Start a host and a client locally, exchange damage, and confirm `[DamageGuard]` logs show remote avatars skipping the magenta flash.
+- **Sync verification:** Use `typelist.txt` exports and `[JOBRNG]` traces to ensure both peers stay deterministic through map generation and loot rolls.
 
 ---
 
@@ -76,12 +76,14 @@ Artifacts land in `src/Megabonk.Multiplayer/bin/<Configuration>/net6.0/net6.0/`.
 
 | Symptom | What to check |
 | --- | --- |
-| Remote player turns magenta | Ensure both peers are running the same build. Check for `[DamageGuard]` logs; if absent, verify `Patch_PlayerRenderer` is applied. |
-| Characters spawn with wrong abilities | Confirm `RemoteStatScope` entries appear when skins initialize. If not, restart both clients to clear residual singleton state. |
-| Network connect fails | Review `[LiteNetTransport]` or `[SteamP2PTransport]` warnings. Firewalls often block UDP 28960 (default). |
-| Map layouts diverge | Make sure both players joined before map generation started. RNG patches must initialize prior to scene load; restart the session if they didn’t. |
+| Remote avatar turns magenta or sticks in T-pose | Confirm both peers are running the same DLL. Look for `[DamageGuard]` / `[RemoteAvatar]` logs; if absent, the player patches did not apply (restart with a clean log). |
+| Ruins or pillars differ between peers | Ensure every player joined before map generation started. Compare `[JOBRNG] PlayerRenderer.Update` lines—if the call counts differ, send both logs so we can extend the RNG coverage. |
+| Chest loot diverges | Grab the host/client sections around `[JOBRNG] InteractableChest.Start` and share them—those lines should match exactly once both sides run the latest DLL. |
+| Cannot connect to host | Check the config (`Role`, `HostAddress`, `Port`). Inspect the log for `[LiteNetTransport]` warnings—firewalls commonly block UDP 28960 (default). |
+| Stutter or packet loss | Try a Release build (smaller logs), disable verbose network tracing (`Debug.VerboseNetworkPackets=false`), and verify both machines are on stable connections. |
+| Crash or assertion | Zip `BepInEx/LogOutput.log` (and `ErrorLog.log` if present) plus the latest `typelist.txt` and attach them to a GitHub issue. |
 
-When in doubt, attach `BepInEx/LogOutput.log` snippets to bug reports—Harmony patches log every key decision with context tags like `[LocatorRegister]` and `[RemoteAvatar]`.
+When in doubt, send logs—Harmony tags every major action (`[LocatorRegister]`, `[JOBRNG]`, `[RemoteAvatar]`, etc.) so we can track the sequence quickly.
 
 ---
 
@@ -94,8 +96,8 @@ When in doubt, attach `BepInEx/LogOutput.log` snippets to bug reports—Harmony 
 
 ### 🛠 In Progress
 - Align remaining RNG consumers (especially `PlayerRenderer.Update`) so ruin/pillar structures, loot rolls, and late-spawn props stay deterministic.
-- Add targeted logging for chest/loot pipelines and confirm host/client seeding covers every InteractableChest variant.
-- Automate “first divergence” diffing between host/client logs to speed up multiplayer debugging.
+- Add targeted logging for chest/loot pipelines and confirm InteractableChest is fully deterministic across host/client.
+- Automate “first divergence” diffing between host/client logs to shorten debugging loops.
 
 ### 🎯 Next Milestones
 - Steam transport polish with NAT punch-through helpers and automatic peer discovery.
@@ -111,8 +113,8 @@ When in doubt, attach `BepInEx/LogOutput.log` snippets to bug reports—Harmony 
 
 ## Credits & Thanks
 
-- **You** – for trying out my first Megabonk mod and offering feedback while it evolves.
+- **You** – for trying out the mod and sending feedback while it evolves.
 - The broader Megabonk community for reverse-engineering tips, IL2CPP exports, and inspiration.
-- BepInEx, HarmonyX, LiteNetLib, and Steamworks.NET maintainers for the tooling that makes projects like this possible.
+- The BepInEx, HarmonyX, LiteNetLib, and Steamworks.NET maintainers for the tooling that makes projects like this possible.
 
-If you build something on top of this, please share screenshots or videos—I’d love to see the chaos you create.
+If you build something on top of this, please share screenshots or videos—we’d love to see the chaos you cook up.
