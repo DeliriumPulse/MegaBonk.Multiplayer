@@ -403,7 +403,7 @@ namespace Megabonk.Multiplayer
                 bool seededUnityRandom = false;
                 if (__originalMethod != null)
                 {
-                    UnityRandomScope.Enter(__originalMethod, scopeTarget, enableLogging: false, captureState: false);
+                    UnityRandomScope.Enter(__originalMethod, scopeTarget, enableLogging: false, captureState: true);
                     seededUnityRandom = true;
                 }
 

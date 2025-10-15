@@ -10,6 +10,8 @@ namespace Megabonk.Multiplayer
 {
     internal static class UnityRandomScope
     {
+        private readonly record struct CallIndexKey(MethodBase Method, object? Target);
+
         private struct ScopeState
         {
             public bool Seeded;
@@ -17,7 +19,7 @@ namespace Megabonk.Multiplayer
             public bool RestoreState;
         }
 
-        private static readonly Dictionary<MethodBase, int> CallIndices = new();
+        private static readonly Dictionary<CallIndexKey, int> CallIndices = new();
         private static readonly object CallIndexLock = new();
         private static int _lastGlobalSeed = int.MinValue;
 
@@ -41,7 +43,13 @@ namespace Megabonk.Multiplayer
                 return;
             }
 
+            MethodBase nonNullMethod = method;
+
             int callIndex;
+            object? targetKey = instance;
+            if (targetKey is Type && (nonNullMethod.IsStatic))
+                targetKey = null;
+
             lock (CallIndexLock)
             {
                 if (_lastGlobalSeed != activeSeed)
@@ -50,8 +58,9 @@ namespace Megabonk.Multiplayer
                     _lastGlobalSeed = activeSeed;
                 }
 
-                CallIndices.TryGetValue(method, out callIndex);
-                CallIndices[method] = callIndex + 1;
+                var key = new CallIndexKey(nonNullMethod, targetKey ?? nonNullMethod);
+                CallIndices.TryGetValue(key, out callIndex);
+                CallIndices[key] = callIndex + 1;
             }
 
             UnityRandom.State previous = default;
@@ -78,12 +87,12 @@ namespace Megabonk.Multiplayer
                 {
                     string typeName = instance switch
                     {
-                        null => method.DeclaringType?.FullName ?? "<null>",
+                        null => nonNullMethod.DeclaringType?.FullName ?? "<null>",
                         Type t => t.FullName ?? t.Name,
                         _ => instance.GetType().FullName ?? "<null>"
                     };
                     MultiplayerPlugin.LogS.LogDebug(
-                        $"[JOBRNG] Seeded UnityEngine.Random with {methodSeed} before {typeName}.{method.Name}#{callIndex}");
+                        $"[JOBRNG] Seeded UnityEngine.Random with {methodSeed} before {typeName}.{nonNullMethod.Name}#{callIndex}");
                 }
                 finally
                 {
