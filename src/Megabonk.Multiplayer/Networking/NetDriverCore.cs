@@ -27,6 +27,7 @@ namespace Megabonk.Multiplayer
     public class NetDriverCore
     {
         private const byte MSG_ANIMATOR = 0x07;
+        private const byte MSG_CHEST_SYNC = 0x0A;
 
         private readonly ITransport _transport;
         private readonly bool _isHost;
@@ -409,6 +410,10 @@ namespace Megabonk.Multiplayer
                         break;
                     }
 
+                    case MSG_CHEST_SYNC:
+                        HandleChestSync(reader);
+                        break;
+
                     default:
                         MultiplayerPlugin.LogS.LogInfo($"[NetDriverCore] Unknown packet tag={tag} from {peerId}, length={data.Count}");
                         break;
@@ -444,11 +449,25 @@ namespace Megabonk.Multiplayer
             });
         }
 
+        private void HandleChestSync(NetDataReader reader)
+        {
+            int index = reader.GetInt();
+            var rotation = new Quaternion(reader.GetFloat(), reader.GetFloat(), reader.GetFloat(), reader.GetFloat());
+            var localScale = new Vector3(reader.GetFloat(), reader.GetFloat(), reader.GetFloat());
+
+            if (_isHost)
+                return;
+
+            ChestSyncRegistry.ApplyFromNetwork(index, rotation, localScale);
+        }
+
         // --------------------------------------------------------------------
         // Scene & spawn
         // --------------------------------------------------------------------
         public void OnSceneLoaded(string sceneName)
         {
+            ChestSyncRegistry.Reset();
+
             if (sceneName == "MainMenu")
             {
                 MultiplayerPlugin.LogS.LogInfo("[NetDriver] Ignoring MainMenu spawn.");
@@ -908,6 +927,25 @@ namespace Megabonk.Multiplayer
 
             CoopSeedStorage.Value = seed;
             SceneManager.LoadScene(scene, LoadSceneMode.Single);
+        }
+
+        public void BroadcastChestState(int index, Quaternion rotation, Vector3 localScale)
+        {
+            if (!_isHost)
+                return;
+
+            var writer = new NetDataWriter();
+            writer.Put(MSG_CHEST_SYNC);
+            writer.Put(index);
+            writer.Put(rotation.x);
+            writer.Put(rotation.y);
+            writer.Put(rotation.z);
+            writer.Put(rotation.w);
+            writer.Put(localScale.x);
+            writer.Put(localScale.y);
+            writer.Put(localScale.z);
+
+            _transport.SendToAll(writer.CopyData(), true);
         }
 
         // --------------------------------------------------------------------

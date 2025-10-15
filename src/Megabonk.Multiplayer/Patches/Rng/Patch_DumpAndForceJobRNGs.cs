@@ -365,6 +365,10 @@ namespace Megabonk.Multiplayer
 						if (method == null || method.IsSpecialName)
 							continue;
 
+						if (fullName.Contains("PlayerRenderer", StringComparison.OrdinalIgnoreCase) &&
+						    string.Equals(method.Name, "Update", StringComparison.Ordinal))
+							continue;
+
 						if (excludedNameFragments.Any(ex => method.Name.IndexOf(ex, StringComparison.OrdinalIgnoreCase) >= 0))
 							continue;
 
