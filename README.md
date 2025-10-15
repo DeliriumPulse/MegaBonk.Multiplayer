@@ -88,6 +88,8 @@ When in doubt, attach `BepInEx/LogOutput.log` snippets to bug reports—Harmony 
 
 ## Roadmap
 
+- ✅ Deterministic terrain/interactable seeding: RNG patches now cover shrines, rails, landscape passes, etc.
+- 🔄 Align remaining RNG consumers (PlayerRenderer / ruin & pillar placement) so structures match 1:1 across peers.
 - Steam transport polish with NAT punch-through helpers.
 - UI surface for quick role switching and IP entry.
 - Snapshot compression for lower bandwidth usage.
